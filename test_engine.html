@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PS Coach — Engine Test Bench</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    :root {
+      --bg:      #0d0f1a;
+      --surface: #161928;
+      --card:    #1e2235;
+      --border:  #2a2f4a;
+      --accent:  #6c8efb;
+      --green:   #4ade80;
+      --yellow:  #facc15;
+      --red:     #f87171;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6c8efb, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: 0.4rem;
+      font-size: 0.9rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: border-color 0.25s;
+    }
+    .card:hover { border-color: var(--accent); }
+
+    .card-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2.4rem;
+      font-weight: 600;
+      line-height: 1;
+      transition: color 0.3s;
+    }
+
+    .metric-unit {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+    }
+
+    /* Bar visualiser */
+    .bar-wrap {
+      margin-top: 1rem;
+      height: 8px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.25s ease, background 0.3s;
+    }
+
+    /* Status log */
+    .log-card {
+      grid-column: 1 / -1;
+    }
+    #log {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+      max-height: 180px;
+      overflow-y: auto;
+      margin-top: 0.5rem;
+      line-height: 1.7;
+    }
+    #log .ok   { color: var(--green);  }
+    #log .warn { color: var(--yellow); }
+    #log .err  { color: var(--red);    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    button {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.65rem 1.75rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-start { background: linear-gradient(135deg, #6c8efb, #a78bfa); color: #fff; }
+    #btn-stop  { background: var(--red);   color: #fff; }
+    #btn-reset { background: var(--card);  color: var(--text); border: 1px solid var(--border); }
+
+    /* Wasm status pill */
+    #wasm-status {
+      font-size: 0.72rem;
+      padding: 0.3rem 0.9rem;
+      border-radius: 999px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .status-loading { background: #2a2f4a; color: var(--muted); }
+    .status-ok      { background: #14532d; color: var(--green); }
+    .status-err     { background: #450a0a; color: var(--red);   }
+
+    /* Waveform canvas */
+    #waveform {
+      width: 100%;
+      max-width: 900px;
+      height: 100px;
+      border-radius: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      display: block;
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎙️ PS Coach — Engine Test Bench</h1>
+  <p>Real-time audio analysis powered by the C/WebAssembly engine</p>
+</header>
+
+<div id="wasm-status" class="status-loading">⏳ Loading WebAssembly engine…</div>
+
+<canvas id="waveform"></canvas>
+
+<div class="controls">
+  <button id="btn-start" disabled>▶ Start Microphone</button>
+  <button id="btn-stop"  disabled>⏹ Stop</button>
+  <button id="btn-reset" disabled>↺ Reset</button>
+</div>
+
+<div class="grid">
+  <!-- Volume -->
+  <div class="card" id="card-volume">
+    <div class="card-label">Volume (RMS)</div>
+    <div class="metric-value" id="val-volume-db">—</div>
+    <div class="metric-unit">dBFS</div>
+    <div class="bar-wrap"><div class="bar-fill" id="bar-volume" style="width:0%;background:var(--green)"></div></div>
+  </div>
+
+  <!-- Pitch -->
+  <div class="card" id="card-pitch">
+    <div class="card-label">Pitch (Fundamental)</div>
+    <div class="metric-value" id="val-pitch">—</div>
+    <div class="metric-unit">Hz</div>
+    <div class="bar-wrap"><div class="bar-fill" id="bar-pitch" style="width:0%;background:var(--accent)"></div></div>
+  </div>
+
+  <!-- Jitter -->
+  <div class="card" id="card-jitter">
+    <div class="card-label">Jitter (Voice Steadiness)</div>
+    <div class="metric-value" id="val-jitter">—</div>
+    <div class="metric-unit">ms avg cycle deviation</div>
+    <div class="bar-wrap"><div class="bar-fill" id="bar-jitter" style="width:0%;background:var(--yellow)"></div></div>
+  </div>
+
+  <!-- Status Log -->
+  <div class="card log-card">
+    <div class="card-label">Engine Log</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<footer>
+  Metrics update every 1 second (rolling window · autocorrelation pitch · jitter tracking)
+</footer>
+
+<!-- ============================================================
+     JavaScript — Engine loader + AudioWorklet integration
+     ============================================================ -->
+<script>
+/* ------------------------------------------------------------------ */
+/*  Logging utility                                                    */
+/* ------------------------------------------------------------------ */
+const logEl = document.getElementById('log');
+function log(msg, type = '') {
+  const line = document.createElement('div');
+  if (type) line.className = type;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Waveform canvas                                                    */
+/* ------------------------------------------------------------------ */
+const canvas  = document.getElementById('waveform');
+const ctx2d   = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
+  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function drawWaveform(buffer) {
+  const w = canvas.width, h = canvas.height;
+  ctx2d.clearRect(0, 0, w, h);
+  ctx2d.strokeStyle = '#6c8efb';
+  ctx2d.lineWidth   = 1.5;
+  ctx2d.beginPath();
+  const step = Math.ceil(buffer.length / w);
+  for (let x = 0; x < w; x++) {
+    const sample = buffer[x * step] || 0;
+    const y = (1 - (sample + 1) / 2) * h;
+    x === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+  }
+  ctx2d.stroke();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Metric display helpers                                             */
+/* ------------------------------------------------------------------ */
+function setMetric(id, value, decimals = 1) {
+  document.getElementById(id).textContent =
+    (typeof value === 'number' && !isNaN(value)) ? value.toFixed(decimals) : '—';
+}
+
+function setBar(id, percent, color) {
+  const el = document.getElementById(id);
+  el.style.width      = Math.max(0, Math.min(100, percent)) + '%';
+  el.style.background = color;
+}
+
+function volumeColor(db) {
+  if (db > -12) return 'var(--red)';
+  if (db > -30) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+function jitterColor(jitter) {
+  if (jitter > 2)  return 'var(--red)';
+  if (jitter > 0.8) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+/* ------------------------------------------------------------------ */
+/*  WASM Engine loading                                                */
+/* ------------------------------------------------------------------ */
+const wasmStatusEl = document.getElementById('wasm-status');
+let   Module = null;
+let   engineInited = false;
+let   metricsPtr   = 0;
+
+// Metric struct byte offsets (matches Metrics typedef in coach.c):
+//   0: volume_rms (float), 4: volume_db (float), 8: pitch_hz (float),
+//   12: jitter_ms (float), 16: window_ready (int)
+const OFFSET_RMS    = 0;
+const OFFSET_DB     = 1;
+const OFFSET_PITCH  = 2;
+const OFFSET_JITTER = 3;
+const OFFSET_READY  = 4; // int32 — read via HEAP32
+
+async function loadEngine() {
+  try {
+    log('Loading engine module…');
+    // Dynamically import the Emscripten-generated JS glue
+    const { default: EngineModuleFactory } = await import('./dist/engine.js');
+    Module = await EngineModuleFactory();
+    log('WebAssembly module instantiated.', 'ok');
+
+    // Wrap the exported C functions
+    Module._engine_init       = Module.cwrap('engine_init',       'number', ['number']);
+    Module._engine_push       = Module.cwrap('engine_push',       'number', ['number','number']);
+    Module._engine_get_metrics= Module.cwrap('engine_get_metrics','number', []);
+    Module._engine_reset      = Module.cwrap('engine_reset',      null,     []);
+
+    const ret = Module._engine_init(44100); // will be re-initialised with real SR
+    if (ret !== 0) throw new Error('engine_init returned ' + ret);
+
+    metricsPtr = Module._engine_get_metrics();
+    log(`engine_init(44100) → OK  |  metrics @ 0x${metricsPtr.toString(16)}`, 'ok');
+    engineInited = true;
+
+    wasmStatusEl.textContent = '✅ Engine Ready';
+    wasmStatusEl.className   = 'status-ok';
+
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-reset').disabled = false;
+  } catch (e) {
+    log('Failed to load engine: ' + e.message, 'err');
+    wasmStatusEl.textContent = '❌ Engine Load Failed — did you run build.sh?';
+    wasmStatusEl.className   = 'status-err';
+  }
+}
+
+loadEngine();
+
+/* ------------------------------------------------------------------ */
+/*  AudioWorklet (inline as a Blob URL)                                */
+/*                                                                     */
+/*  The worklet runs on a dedicated audio thread. It receives 128-     */
+/*  sample Float32Arrays from the microphone, writes them into the     */
+/*  WASM heap, calls engine_push(), then forwards a copy to the main   */
+/*  thread for waveform rendering.                                      */
+/* ------------------------------------------------------------------ */
+const workletCode = /* javascript */`
+class CoachProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this._wasmReady  = false;
+    this._module     = null;
+    this._bufPtr     = 0;
+    this._CHUNK      = 128;
+    this._metricsPtr = 0;
+
+    // The main thread will post the already-instantiated WASM module
+    this.port.onmessage = (e) => {
+      if (e.data.type === 'init') {
+        this._module     = e.data.module;
+        this._metricsPtr = e.data.metricsPtr;
+
+        // Re-init with the real sample rate
+        this._module._engine_init(sampleRate);
+        this._metricsPtr = this._module._engine_get_metrics();
+
+        // Allocate a persistent WASM heap buffer for audio chunks
+        this._bufPtr = this._module._malloc(this._CHUNK * 4); // 4 bytes per float32
+        this._wasmReady = true;
+        this.port.postMessage({ type: 'ready' });
+      }
+    };
+  }
+
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input[0] || !this._wasmReady) return true;
+
+    const samples = input[0]; // Float32Array, length 128
+
+    // Waveform snapshot → main thread (cheap structured-clone)
+    this.port.postMessage({ type: 'wave', buf: samples.slice(0) });
+
+    // Write samples into WASM heap
+    const heap = this._module.HEAPF32;
+    const off   = this._bufPtr >> 2; // byte ptr → float32 index
+    for (let i = 0; i < samples.length; i++) {
+      heap[off + i] = samples[i];
+    }
+
+    // Push to the engine; returns 1 when the 1-second window is complete
+    const windowDone = this._module._engine_push(this._bufPtr, samples.length);
+
+    if (windowDone) {
+      // Read metrics struct directly from WASM memory
+      const fOff   = this._metricsPtr >> 2;
+      const iOff   = this._metricsPtr >> 2;
+      const HEAPF32 = this._module.HEAPF32;
+      const HEAP32  = this._module.HEAP32;
+
+      const metrics = {
+        volume_rms  : HEAPF32[fOff + 0],
+        volume_db   : HEAPF32[fOff + 1],
+        pitch_hz    : HEAPF32[fOff + 2],
+        jitter_ms   : HEAPF32[fOff + 3],
+        window_ready: HEAP32 [(iOff + 4)],
+      };
+      this.port.postMessage({ type: 'metrics', metrics });
+    }
+
+    return true; // keep processor alive
+  }
+}
+
+registerProcessor('coach-processor', CoachProcessor);
+`;
+
+/* ------------------------------------------------------------------ */
+/*  Mic capture + Worklet setup                                        */
+/* ------------------------------------------------------------------ */
+let audioCtx   = null;
+let workletNode = null;
+let streamSource= null;
+let mediaStream = null;
+
+async function startMic() {
+  if (!engineInited) { log('Engine not ready yet.', 'warn'); return; }
+
+  try {
+    log('Requesting microphone access…');
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    log('Microphone granted.', 'ok');
+
+    audioCtx = new AudioContext();
+    const sr = audioCtx.sampleRate;
+    log(`AudioContext sampleRate: ${sr} Hz`);
+
+    // Re-init engine with the real sample rate
+    Module._engine_reset();
+    Module._engine_init(sr);
+    metricsPtr = Module._engine_get_metrics();
+
+    // Create worklet from inline blob
+    const blob     = new Blob([workletCode], { type: 'application/javascript' });
+    const blobURL  = URL.createObjectURL(blob);
+    await audioCtx.audioWorklet.addModule(blobURL);
+
+    workletNode = new AudioWorkletNode(audioCtx, 'coach-processor');
+
+    // Send the WASM module instance to the worklet thread
+    workletNode.port.postMessage({
+      type      : 'init',
+      module    : Module,
+      metricsPtr: metricsPtr,
+    });
+
+    workletNode.port.onmessage = (e) => {
+      if (e.data.type === 'ready') {
+        log('AudioWorklet + WASM running on audio thread.', 'ok');
+      }
+      if (e.data.type === 'wave') {
+        drawWaveform(e.data.buf);
+      }
+      if (e.data.type === 'metrics') {
+        updateMetrics(e.data.metrics);
+      }
+    };
+
+    streamSource = audioCtx.createMediaStreamSource(mediaStream);
+    streamSource.connect(workletNode);
+    // Do NOT connect workletNode to destination (no speaker feedback)
+
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-stop').disabled  = false;
+    log('Listening… metrics update every 1 second.', 'ok');
+
+  } catch (err) {
+    log('Error: ' + err.message, 'err');
+  }
+}
+
+function stopMic() {
+  if (streamSource) { streamSource.disconnect(); streamSource = null; }
+  if (workletNode)  { workletNode.disconnect();  workletNode  = null; }
+  if (audioCtx)     { audioCtx.close();          audioCtx     = null; }
+  if (mediaStream)  { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+  log('Microphone stopped.', 'warn');
+}
+
+function resetEngine() {
+  if (engineInited) {
+    Module._engine_reset();
+    setMetric('val-volume-db', NaN);
+    setMetric('val-pitch',     NaN);
+    setMetric('val-jitter',    NaN);
+    setBar('bar-volume', 0, 'var(--green)');
+    setBar('bar-pitch',  0, 'var(--accent)');
+    setBar('bar-jitter', 0, 'var(--yellow)');
+    log('Engine state reset.', 'warn');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Render metrics to UI                                               */
+/* ------------------------------------------------------------------ */
+function updateMetrics(m) {
+  // Volume
+  const db = m.volume_db;
+  setMetric('val-volume-db', db);
+  // Map dBFS [-60, 0] → [0, 100]%
+  const volPct = Math.max(0, (db + 60) / 60 * 100);
+  setBar('bar-volume', volPct, volumeColor(db));
+
+  // Pitch
+  const pitch = m.pitch_hz;
+  setMetric('val-pitch', pitch, 1);
+  // Map [80, 500] Hz → [0, 100]%
+  const pitchPct = Math.max(0, (pitch - 80) / (500 - 80) * 100);
+  setBar('bar-pitch', pitchPct, 'var(--accent)');
+
+  // Jitter
+  const jitter = m.jitter_ms;
+  setMetric('val-jitter', jitter, 3);
+  // Map [0, 5ms] → [0, 100]%
+  const jitterPct = Math.min(100, jitter / 5 * 100);
+  setBar('bar-jitter', jitterPct, jitterColor(jitter));
+
+  const voiced = pitch > 0 ? `pitched @ ${pitch.toFixed(1)} Hz` : 'unvoiced / silence';
+  log(`vol ${db.toFixed(1)} dBFS | ${voiced} | jitter ${jitter.toFixed(3)} ms`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Button wiring                                                      */
+/* ------------------------------------------------------------------ */
+document.getElementById('btn-start').addEventListener('click', startMic);
+document.getElementById('btn-stop' ).addEventListener('click', stopMic);
+document.getElementById('btn-reset').addEventListener('click', resetEngine);
+</script>
+
+</body>
+</html>
