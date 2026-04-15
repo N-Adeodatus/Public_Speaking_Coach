@@ -178,7 +178,40 @@
       font-size: 0.75rem;
       text-align: center;
     }
+
+    /* ---- Metrics History Graph ---- */
+    .graph-card { grid-column: 1 / -1; }
+
+    .graph-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 2rem;
+      margin: 0.6rem 0 0.9rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px currentColor;
+    }
+    .legend-scale {
+      color: var(--muted);
+      font-size: 0.68rem;
+      margin-left: auto;
+      align-self: center;
+    }
+    #metrics-graph {
+      width: 100%;
+      height: 240px;
+      display: block;
+      border-radius: 10px;
+    }
   </style>
+<!-- Load the Emscripten-generated glue as a classic script (sets window.EngineModule) -->
+<script src="./dist/engine.js"></script>
 </head>
 <body>
 
@@ -220,6 +253,30 @@
     <div class="metric-value" id="val-jitter">—</div>
     <div class="metric-unit">ms avg cycle deviation</div>
     <div class="bar-wrap"><div class="bar-fill" id="bar-jitter" style="width:0%;background:var(--yellow)"></div></div>
+  </div>
+
+  <!-- Metrics History Graph -->
+  <div class="card graph-card">
+    <div class="card-label">Real-Time Metrics History — last 60 seconds</div>
+    <div class="graph-legend">
+      <span class="legend-item">
+        <span class="legend-dot" style="background:#4ade80;color:#4ade80"></span>
+        <span style="color:#4ade80" id="legend-vol">Volume: — dBFS</span>
+        <span style="color:var(--muted);font-size:0.68rem">&nbsp;(−60→0 dBFS)</span>
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot" style="background:#6c8efb;color:#6c8efb"></span>
+        <span style="color:#6c8efb" id="legend-pitch">Pitch: — Hz</span>
+        <span style="color:var(--muted);font-size:0.68rem">&nbsp;(80→500 Hz)</span>
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot" style="background:#facc15;color:#facc15"></span>
+        <span style="color:#facc15" id="legend-jitter">Jitter: — ms</span>
+        <span style="color:var(--muted);font-size:0.68rem">&nbsp;(0→5 ms)</span>
+      </span>
+      <span class="legend-scale">All metrics normalized 0–100 %</span>
+    </div>
+    <canvas id="metrics-graph"></canvas>
   </div>
 
   <!-- Status Log -->
@@ -310,6 +367,7 @@ const wasmStatusEl = document.getElementById('wasm-status');
 let   Module = null;
 let   engineInited = false;
 let   metricsPtr   = 0;
+let   audioPtr     = 0; // WASM heap buffer for incoming audio chunks
 
 // Metric struct byte offsets (matches Metrics typedef in coach.c):
 //   0: volume_rms (float), 4: volume_db (float), 8: pitch_hz (float),
@@ -323,9 +381,10 @@ const OFFSET_READY  = 4; // int32 — read via HEAP32
 async function loadEngine() {
   try {
     log('Loading engine module…');
-    // Dynamically import the Emscripten-generated JS glue
-    const { default: EngineModuleFactory } = await import('./dist/engine.js');
-    Module = await EngineModuleFactory();
+    // engine.js is already loaded via <script> tag above.
+    // MODULARIZE=1 sets window.EngineModule as the factory function.
+    if (typeof EngineModule === 'undefined') throw new Error('engine.js script not loaded — check dist/engine.js exists');
+    Module = await EngineModule();
     log('WebAssembly module instantiated.', 'ok');
 
     // Wrap the exported C functions
@@ -338,6 +397,7 @@ async function loadEngine() {
     if (ret !== 0) throw new Error('engine_init returned ' + ret);
 
     metricsPtr = Module._engine_get_metrics();
+    audioPtr   = Module._malloc(128 * 4); // 128 float32 samples × 4 bytes
     log(`engine_init(44100) → OK  |  metrics @ 0x${metricsPtr.toString(16)}`, 'ok');
     engineInited = true;
 
@@ -363,74 +423,22 @@ loadEngine();
 /*  WASM heap, calls engine_push(), then forwards a copy to the main   */
 /*  thread for waveform rendering.                                      */
 /* ------------------------------------------------------------------ */
-const workletCode = /* javascript */`
+// The worklet is intentionally minimal — it only forwards raw audio
+// samples to the main thread as transferable ArrayBuffers.
+// All WASM engine calls happen on the main thread to avoid the
+// "cannot clone function" postMessage restriction.
+const workletCode = `
 class CoachProcessor extends AudioWorkletProcessor {
-  constructor(options) {
-    super();
-    this._wasmReady  = false;
-    this._module     = null;
-    this._bufPtr     = 0;
-    this._CHUNK      = 128;
-    this._metricsPtr = 0;
-
-    // The main thread will post the already-instantiated WASM module
-    this.port.onmessage = (e) => {
-      if (e.data.type === 'init') {
-        this._module     = e.data.module;
-        this._metricsPtr = e.data.metricsPtr;
-
-        // Re-init with the real sample rate
-        this._module._engine_init(sampleRate);
-        this._metricsPtr = this._module._engine_get_metrics();
-
-        // Allocate a persistent WASM heap buffer for audio chunks
-        this._bufPtr = this._module._malloc(this._CHUNK * 4); // 4 bytes per float32
-        this._wasmReady = true;
-        this.port.postMessage({ type: 'ready' });
-      }
-    };
-  }
-
   process(inputs) {
     const input = inputs[0];
-    if (!input || !input[0] || !this._wasmReady) return true;
-
-    const samples = input[0]; // Float32Array, length 128
-
-    // Waveform snapshot → main thread (cheap structured-clone)
-    this.port.postMessage({ type: 'wave', buf: samples.slice(0) });
-
-    // Write samples into WASM heap
-    const heap = this._module.HEAPF32;
-    const off   = this._bufPtr >> 2; // byte ptr → float32 index
-    for (let i = 0; i < samples.length; i++) {
-      heap[off + i] = samples[i];
-    }
-
-    // Push to the engine; returns 1 when the 1-second window is complete
-    const windowDone = this._module._engine_push(this._bufPtr, samples.length);
-
-    if (windowDone) {
-      // Read metrics struct directly from WASM memory
-      const fOff   = this._metricsPtr >> 2;
-      const iOff   = this._metricsPtr >> 2;
-      const HEAPF32 = this._module.HEAPF32;
-      const HEAP32  = this._module.HEAP32;
-
-      const metrics = {
-        volume_rms  : HEAPF32[fOff + 0],
-        volume_db   : HEAPF32[fOff + 1],
-        pitch_hz    : HEAPF32[fOff + 2],
-        jitter_ms   : HEAPF32[fOff + 3],
-        window_ready: HEAP32 [(iOff + 4)],
-      };
-      this.port.postMessage({ type: 'metrics', metrics });
-    }
-
-    return true; // keep processor alive
+    if (!input || !input[0]) return true;
+    const samples = input[0]; // Float32Array, 128 samples
+    // Transfer ownership (zero-copy) to main thread
+    const copy = samples.slice(0);
+    this.port.postMessage({ type: 'audio', buf: copy }, [copy.buffer]);
+    return true;
   }
 }
-
 registerProcessor('coach-processor', CoachProcessor);
 `;
 
@@ -467,21 +475,33 @@ async function startMic() {
     workletNode = new AudioWorkletNode(audioCtx, 'coach-processor');
 
     // Send the WASM module instance to the worklet thread
-    workletNode.port.postMessage({
-      type      : 'init',
-      module    : Module,
-      metricsPtr: metricsPtr,
-    });
+    // No init message needed — worklet has no WASM dependency.
+    log('AudioWorklet active. Engine running on main thread.', 'ok');
 
     workletNode.port.onmessage = (e) => {
-      if (e.data.type === 'ready') {
-        log('AudioWorklet + WASM running on audio thread.', 'ok');
-      }
-      if (e.data.type === 'wave') {
-        drawWaveform(e.data.buf);
-      }
-      if (e.data.type === 'metrics') {
-        updateMetrics(e.data.metrics);
+      if (e.data.type !== 'audio') return;
+      const samples = new Float32Array(e.data.buf);
+
+      // Draw waveform
+      drawWaveform(samples);
+
+      // Write samples into the WASM heap buffer
+      const off = audioPtr >> 2; // byte offset → float32 index
+      Module.HEAPF32.set(samples, off);
+
+      // Push to engine — returns 1 when the 1-second window is complete
+      const windowDone = Module._engine_push(audioPtr, samples.length);
+
+      if (windowDone) {
+        const fOff = metricsPtr >> 2;
+        const metrics = {
+          volume_rms  : Module.HEAPF32[fOff + 0],
+          volume_db   : Module.HEAPF32[fOff + 1],
+          pitch_hz    : Module.HEAPF32[fOff + 2],
+          jitter_ms   : Module.HEAPF32[fOff + 3],
+          window_ready: Module.HEAP32 [fOff + 4],
+        };
+        updateMetrics(metrics);
       }
     };
 
@@ -549,6 +569,205 @@ function updateMetrics(m) {
 
   const voiced = pitch > 0 ? `pitched @ ${pitch.toFixed(1)} Hz` : 'unvoiced / silence';
   log(`vol ${db.toFixed(1)} dBFS | ${voiced} | jitter ${jitter.toFixed(3)} ms`);
+
+  // Push to history graph and update live legend
+  pushMetricsHistory({ volume_db: db, pitch_hz: pitch, jitter_ms: jitter });
+  document.getElementById('legend-vol').textContent    = `Volume: ${db.toFixed(1)} dBFS`;
+  document.getElementById('legend-pitch').textContent  = pitch > 0 ? `Pitch: ${pitch.toFixed(1)} Hz` : 'Pitch: unvoiced';
+  document.getElementById('legend-jitter').textContent = `Jitter: ${jitter.toFixed(3)} ms`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Real-Time Metrics History Graph                                    */
+/* ------------------------------------------------------------------ */
+const MAX_HISTORY   = 60;      // data points (1 per second)
+const metricsHistory = [];
+const gCanvas = document.getElementById('metrics-graph');
+const gCtx    = gCanvas.getContext('2d');
+
+function resizeGraph() {
+  gCanvas.width  = gCanvas.offsetWidth  * (window.devicePixelRatio || 1);
+  gCanvas.height = gCanvas.offsetHeight * (window.devicePixelRatio || 1);
+  drawGraph();
+}
+window.addEventListener('resize', resizeGraph);
+resizeGraph();
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function pushMetricsHistory(d) {
+  metricsHistory.push(d);
+  if (metricsHistory.length > MAX_HISTORY) metricsHistory.shift();
+  drawGraph();
+}
+
+function drawGraph() {
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = gCanvas.width;
+  const H    = gCanvas.height;
+  const padL = 48 * dpr, padR = 16 * dpr;
+  const padT = 16 * dpr, padB = 32 * dpr;
+  const pW   = W - padL - padR;
+  const pH   = H - padT - padB;
+
+  gCtx.clearRect(0, 0, W, H);
+
+  /* ---- background ---- */
+  gCtx.fillStyle = 'rgba(13,15,26,0.7)';
+  gCtx.beginPath();
+  const r = 10 * dpr;
+  gCtx.roundRect(0, 0, W, H, r);
+  gCtx.fill();
+
+  /* ---- horizontal grid + Y labels ---- */
+  const gridSteps = 4;
+  for (let i = 0; i <= gridSteps; i++) {
+    const y   = padT + pH - (i / gridSteps) * pH;
+    const pct = (i / gridSteps * 100).toFixed(0) + '%';
+
+    gCtx.beginPath();
+    gCtx.strokeStyle = i === 0 ? 'rgba(42,47,74,0.9)' : 'rgba(42,47,74,0.45)';
+    gCtx.lineWidth   = (i === 0 ? 1.5 : 1) * dpr;
+    gCtx.setLineDash(i === 0 ? [] : [4 * dpr, 4 * dpr]);
+    gCtx.moveTo(padL, y);
+    gCtx.lineTo(padL + pW, y);
+    gCtx.stroke();
+    gCtx.setLineDash([]);
+
+    gCtx.fillStyle  = '#64748b';
+    gCtx.font       = `${10 * dpr}px JetBrains Mono, monospace`;
+    gCtx.textAlign  = 'right';
+    gCtx.textBaseline = 'middle';
+    gCtx.fillText(pct, padL - 7 * dpr, y);
+  }
+
+  /* ---- X axis labels (time) ---- */
+  const xTicks = 6;
+  gCtx.font      = `${9 * dpr}px Inter, sans-serif`;
+  gCtx.fillStyle = '#64748b';
+  gCtx.textBaseline = 'top';
+  for (let i = 0; i <= xTicks; i++) {
+    const x      = padL + (i / xTicks) * pW;
+    const secAgo = Math.round((xTicks - i) * (MAX_HISTORY / xTicks));
+    gCtx.textAlign = i === 0 ? 'left' : i === xTicks ? 'right' : 'center';
+    gCtx.fillText(secAgo === 0 ? 'now' : `−${secAgo}s`, x, padT + pH + 6 * dpr);
+
+    if (i > 0 && i < xTicks) {
+      gCtx.beginPath();
+      gCtx.strokeStyle = 'rgba(42,47,74,0.3)';
+      gCtx.lineWidth   = 0.5 * dpr;
+      gCtx.setLineDash([3 * dpr, 5 * dpr]);
+      gCtx.moveTo(x, padT);
+      gCtx.lineTo(x, padT + pH);
+      gCtx.stroke();
+      gCtx.setLineDash([]);
+    }
+  }
+
+  /* ---- empty state ---- */
+  if (metricsHistory.length < 2) {
+    gCtx.fillStyle    = '#334155';
+    gCtx.font         = `${13 * dpr}px Inter, sans-serif`;
+    gCtx.textAlign    = 'center';
+    gCtx.textBaseline = 'middle';
+    gCtx.fillText('Start the microphone to see live metrics history', W / 2, H / 2);
+    return;
+  }
+
+  /* ---- draw one metric line ---- */
+  function drawLine(normFn, hexColor) {
+    const n   = metricsHistory.length;
+    const pts = metricsHistory.map((d, i) => {
+      const norm = normFn(d);
+      if (norm === null) return null;
+      return {
+        x: padL + (i / (MAX_HISTORY - 1)) * pW,
+        y: padT + pH - norm * pH,
+      };
+    });
+
+    /* gradient fill */
+    gCtx.beginPath();
+    let started = false;
+    let lastPt  = null;
+    for (let i = 0; i < pts.length; i++) {
+      if (!pts[i]) { started = false; lastPt = null; continue; }
+      if (!started) {
+        gCtx.moveTo(pts[i].x, padT + pH);
+        gCtx.lineTo(pts[i].x, pts[i].y);
+        started = true;
+      } else if (lastPt) {
+        const mx = (lastPt.x + pts[i].x) / 2;
+        gCtx.bezierCurveTo(mx, lastPt.y, mx, pts[i].y, pts[i].x, pts[i].y);
+      }
+      lastPt = pts[i];
+    }
+    if (lastPt) {
+      gCtx.lineTo(lastPt.x, padT + pH);
+      gCtx.closePath();
+      const grad = gCtx.createLinearGradient(0, padT, 0, padT + pH);
+      grad.addColorStop(0, hexToRgba(hexColor, 0.22));
+      grad.addColorStop(1, hexToRgba(hexColor, 0));
+      gCtx.fillStyle = grad;
+      gCtx.fill();
+    }
+
+    /* stroke with glow */
+    gCtx.beginPath();
+    started = false; lastPt = null;
+    for (let i = 0; i < pts.length; i++) {
+      if (!pts[i]) { started = false; lastPt = null; continue; }
+      if (!started) {
+        gCtx.moveTo(pts[i].x, pts[i].y);
+        started = true;
+      } else if (lastPt) {
+        const mx = (lastPt.x + pts[i].x) / 2;
+        gCtx.bezierCurveTo(mx, lastPt.y, mx, pts[i].y, pts[i].x, pts[i].y);
+      }
+      lastPt = pts[i];
+    }
+    gCtx.shadowColor  = hexColor;
+    gCtx.shadowBlur   = 10 * dpr;
+    gCtx.strokeStyle  = hexColor;
+    gCtx.lineWidth    = 2.5 * dpr;
+    gCtx.lineJoin     = 'round';
+    gCtx.stroke();
+    gCtx.shadowBlur   = 0;
+
+    /* dot at the newest point */
+    const last = pts.filter(Boolean).at(-1);
+    if (last) {
+      gCtx.beginPath();
+      gCtx.arc(last.x, last.y, 4 * dpr, 0, Math.PI * 2);
+      gCtx.fillStyle   = hexColor;
+      gCtx.shadowColor = hexColor;
+      gCtx.shadowBlur  = 12 * dpr;
+      gCtx.fill();
+      gCtx.shadowBlur  = 0;
+    }
+  }
+
+  /* normalisation helpers */
+  const normVol    = d => Math.max(0, Math.min(1, (d.volume_db + 60) / 60));
+  const normPitch  = d => d.pitch_hz > 0
+    ? Math.max(0, Math.min(1, (d.pitch_hz - 80) / (500 - 80)))
+    : null;
+  const normJitter = d => Math.max(0, Math.min(1, d.jitter_ms / 5));
+
+  /* draw fills first (underneath), then strokes on top */
+  drawLine(normVol,    '#4ade80');
+  drawLine(normPitch,  '#6c8efb');
+  drawLine(normJitter, '#facc15');
+
+  /* ---- plot border ---- */
+  gCtx.strokeStyle = 'rgba(42,47,74,0.7)';
+  gCtx.lineWidth   = 1 * dpr;
+  gCtx.strokeRect(padL, padT, pW, pH);
 }
 
 /* ------------------------------------------------------------------ */
