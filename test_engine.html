@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PS Coach — Engine Test Bench</title>
+  <title>PS Coach — Coaching Dashboard</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
@@ -33,749 +33,234 @@
       padding: 2rem 1rem;
     }
 
-    header {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
+    header { text-align: center; margin-bottom: 2.5rem; }
     header h1 {
-      font-size: 1.75rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #6c8efb, #a78bfa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      letter-spacing: -0.5px;
+      font-size: 1.75rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    header p {
-      color: var(--muted);
-      margin-top: 0.4rem;
-      font-size: 0.9rem;
+    
+    .status-panel {
+      width: 100%; max-width: 900px;
+      margin-bottom: 2rem;
+      text-align: center;
     }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.25rem;
-      width: 100%;
-      max-width: 900px;
-    }
-
-    .card {
+    
+    #feedback-board {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 1.5rem;
-      transition: border-color 0.25s;
-    }
-    .card:hover { border-color: var(--accent); }
-
-    .card-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: var(--muted);
-      margin-bottom: 0.75rem;
-    }
-
-    .metric-value {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 2.4rem;
+      padding: 3rem 1.5rem;
+      font-size: 2rem;
       font-weight: 600;
-      line-height: 1;
-      transition: color 0.3s;
-    }
-
-    .metric-unit {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-top: 0.35rem;
-    }
-
-    /* Bar visualiser */
-    .bar-wrap {
-      margin-top: 1rem;
-      height: 8px;
-      background: var(--border);
-      border-radius: 999px;
-      overflow: hidden;
-    }
-    .bar-fill {
-      height: 100%;
-      border-radius: 999px;
-      transition: width 0.25s ease, background 0.3s;
-    }
-
-    /* Status log */
-    .log-card {
-      grid-column: 1 / -1;
-    }
-    #log {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      color: var(--muted);
-      max-height: 180px;
-      overflow-y: auto;
-      margin-top: 0.5rem;
-      line-height: 1.7;
-    }
-    #log .ok   { color: var(--green);  }
-    #log .warn { color: var(--yellow); }
-    #log .err  { color: var(--red);    }
-
-    /* Controls */
-    .controls {
+      transition: all 0.3s;
+      min-height: 150px;
       display: flex;
-      gap: 1rem;
-      margin-bottom: 2rem;
-      flex-wrap: wrap;
+      align-items: center;
       justify-content: center;
     }
+    
+    .c-green { color: var(--green); text-shadow: 0 0 10px rgba(74, 222, 128, 0.3); border-color: var(--green) !important; }
+    .c-yellow { color: var(--yellow); text-shadow: 0 0 10px rgba(250, 204, 21, 0.3); border-color: var(--yellow) !important; }
+    .c-red { color: var(--red); text-shadow: 0 0 10px rgba(248, 113, 113, 0.3); border-color: var(--red) !important; }
 
+    .controls { display: flex; gap: 1rem; margin-bottom: 2rem; justify-content: center; }
     button {
-      font-family: 'Inter', sans-serif;
-      font-size: 0.9rem;
-      font-weight: 600;
-      padding: 0.65rem 1.75rem;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: opacity 0.2s, transform 0.15s;
+      font-family: 'Inter', sans-serif; font-size: 0.9rem; font-weight: 600;
+      padding: 0.65rem 1.75rem; border: none; border-radius: 10px; cursor: pointer;
     }
-    button:active { transform: scale(0.97); }
-    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    #btn-start { background: linear-gradient(135deg, var(--accent), #a78bfa); color: #fff; }
+    #btn-stop  { background: var(--red); color: #fff; }
 
-    #btn-start { background: linear-gradient(135deg, #6c8efb, #a78bfa); color: #fff; }
-    #btn-stop  { background: var(--red);   color: #fff; }
-    #btn-reset { background: var(--card);  color: var(--text); border: 1px solid var(--border); }
-
-    /* Wasm status pill */
-    #wasm-status {
-      font-size: 0.72rem;
-      padding: 0.3rem 0.9rem;
-      border-radius: 999px;
-      margin-bottom: 1.5rem;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-    }
-    .status-loading { background: #2a2f4a; color: var(--muted); }
-    .status-ok      { background: #14532d; color: var(--green); }
-    .status-err     { background: #450a0a; color: var(--red);   }
-
-    /* Waveform canvas */
-    #waveform {
-      width: 100%;
-      max-width: 900px;
-      height: 100px;
-      border-radius: 12px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      margin-bottom: 1.5rem;
-      display: block;
-    }
-
-    footer {
-      margin-top: 2.5rem;
-      color: var(--muted);
-      font-size: 0.75rem;
-      text-align: center;
-    }
-
-    /* ---- Metrics History Graph ---- */
-    .graph-card { grid-column: 1 / -1; }
-
-    .graph-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem 2rem;
-      margin: 0.6rem 0 0.9rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-    }
-    .legend-item { display: flex; align-items: center; gap: 0.4rem; }
-    .legend-dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      box-shadow: 0 0 6px currentColor;
-    }
-    .legend-scale {
-      color: var(--muted);
-      font-size: 0.68rem;
-      margin-left: auto;
-      align-self: center;
-    }
-    #metrics-graph {
-      width: 100%;
-      height: 240px;
-      display: block;
-      border-radius: 10px;
-    }
+    /* Advanced View */
+    #advanced-view { display: none; width: 100%; max-width: 900px; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
+    .card-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 0.75rem; }
+    .metric-value { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 600; }
   </style>
-<!-- Load the Emscripten-generated glue as a classic script (sets window.EngineModule) -->
-<script src="./dist/engine.js"></script>
 </head>
 <body>
 
 <header>
-  <h1>🎙️ PS Coach — Engine Test Bench</h1>
-  <p>Real-time audio analysis powered by the C/WebAssembly engine</p>
+  <h1>🎙️ PS Coach</h1>
+  <p>Real-time behavioral feedback engine</p>
 </header>
 
-<div id="wasm-status" class="status-loading">⏳ Loading WebAssembly engine…</div>
-
-<canvas id="waveform"></canvas>
-
 <div class="controls">
-  <button id="btn-start" disabled>▶ Start Microphone</button>
-  <button id="btn-stop"  disabled>⏹ Stop</button>
-  <button id="btn-reset" disabled>↺ Reset</button>
-</div>
-
-<div class="grid">
-  <!-- Volume -->
-  <div class="card" id="card-volume">
-    <div class="card-label">Volume (RMS)</div>
-    <div class="metric-value" id="val-volume-db">—</div>
-    <div class="metric-unit">dBFS</div>
-    <div class="bar-wrap"><div class="bar-fill" id="bar-volume" style="width:0%;background:var(--green)"></div></div>
-  </div>
-
-  <!-- Pitch -->
-  <div class="card" id="card-pitch">
-    <div class="card-label">Pitch (Fundamental)</div>
-    <div class="metric-value" id="val-pitch">—</div>
-    <div class="metric-unit">Hz</div>
-    <div class="bar-wrap"><div class="bar-fill" id="bar-pitch" style="width:0%;background:var(--accent)"></div></div>
-  </div>
-
-  <!-- Jitter -->
-  <div class="card" id="card-jitter">
-    <div class="card-label">Jitter (Voice Steadiness)</div>
-    <div class="metric-value" id="val-jitter">—</div>
-    <div class="metric-unit">ms avg cycle deviation</div>
-    <div class="bar-wrap"><div class="bar-fill" id="bar-jitter" style="width:0%;background:var(--yellow)"></div></div>
-  </div>
-
-  <!-- Metrics History Graph -->
-  <div class="card graph-card">
-    <div class="card-label">Real-Time Metrics History — last 60 seconds</div>
-    <div class="graph-legend">
-      <span class="legend-item">
-        <span class="legend-dot" style="background:#4ade80;color:#4ade80"></span>
-        <span style="color:#4ade80" id="legend-vol">Volume: — dBFS</span>
-        <span style="color:var(--muted);font-size:0.68rem">&nbsp;(−60→0 dBFS)</span>
-      </span>
-      <span class="legend-item">
-        <span class="legend-dot" style="background:#6c8efb;color:#6c8efb"></span>
-        <span style="color:#6c8efb" id="legend-pitch">Pitch: — Hz</span>
-        <span style="color:var(--muted);font-size:0.68rem">&nbsp;(80→500 Hz)</span>
-      </span>
-      <span class="legend-item">
-        <span class="legend-dot" style="background:#facc15;color:#facc15"></span>
-        <span style="color:#facc15" id="legend-jitter">Jitter: — ms</span>
-        <span style="color:var(--muted);font-size:0.68rem">&nbsp;(0→5 ms)</span>
-      </span>
-      <span class="legend-scale">All metrics normalized 0–100 %</span>
-    </div>
-    <canvas id="metrics-graph"></canvas>
-  </div>
-
-  <!-- Status Log -->
-  <div class="card log-card">
-    <div class="card-label">Engine Log</div>
-    <div id="log"></div>
+  <button id="btn-start">▶ Start Microphone</button>
+  <button id="btn-stop" disabled>⏹ Stop</button>
+  <div style="display:flex;align-items:center;margin-left:1rem;">
+    <input type="checkbox" id="toggle-advanced"> <label for="toggle-advanced" style="font-size:0.8rem;color:var(--muted);margin-left:8px;">Show Advanced</label>
   </div>
 </div>
 
-<footer>
-  Metrics update every 1 second (rolling window · autocorrelation pitch · jitter tracking)
-</footer>
+<div class="status-panel">
+  <div id="feedback-board">Press Start to Begin</div>
+</div>
 
-<!-- ============================================================
-     JavaScript — Engine loader + AudioWorklet integration
-     ============================================================ -->
+<div id="advanced-view">
+  <div class="card">
+    <div class="card-label">Pitch (F0)</div>
+    <div class="metric-value" id="val-f0">—</div>
+    <div style="font-size:0.8rem;color:var(--muted);margin-top:0.4rem">Hz</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Pitch Variance (CV)</div>
+    <div class="metric-value" id="val-cv">—</div>
+    <div style="font-size:0.8rem;color:var(--muted);margin-top:0.4rem">coefficient of variation</div>
+  </div>
+  <div class="card">
+    <div class="card-label">RMS (Loudness)</div>
+    <div class="metric-value" id="val-rms">—</div>
+    <div style="font-size:0.8rem;color:var(--muted);margin-top:0.4rem">raw amplitude</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Voice Activity</div>
+    <div class="metric-value" id="val-vad">—</div>
+  </div>
+</div>
+
 <script>
-/* ------------------------------------------------------------------ */
-/*  Logging utility                                                    */
-/* ------------------------------------------------------------------ */
-const logEl = document.getElementById('log');
-function log(msg, type = '') {
-  const line = document.createElement('div');
-  if (type) line.className = type;
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  logEl.appendChild(line);
-  logEl.scrollTop = logEl.scrollHeight;
-}
+  let audioCtx, workletNode, mediaStream, streamSource;
+  const btnStart = document.getElementById('btn-start');
+  const btnStop = document.getElementById('btn-stop');
+  const feedbackBoard = document.getElementById('feedback-board');
+  
+  document.getElementById('toggle-advanced').addEventListener('change', (e) => {
+    document.getElementById('advanced-view').style.display = e.target.checked ? 'grid' : 'none';
+  });
 
-/* ------------------------------------------------------------------ */
-/*  Waveform canvas                                                    */
-/* ------------------------------------------------------------------ */
-const canvas  = document.getElementById('waveform');
-const ctx2d   = canvas.getContext('2d');
+  // Windows
+  const shortWindowCV = [];
+  
+  // Feedback Cooldown
+  let currentFeedbackTime = 0;
+  let sentenceDropCount = 0;
 
-function resizeCanvas() {
-  canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
-  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-}
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-function drawWaveform(buffer) {
-  const w = canvas.width, h = canvas.height;
-  ctx2d.clearRect(0, 0, w, h);
-  ctx2d.strokeStyle = '#6c8efb';
-  ctx2d.lineWidth   = 1.5;
-  ctx2d.beginPath();
-  const step = Math.ceil(buffer.length / w);
-  for (let x = 0; x < w; x++) {
-    const sample = buffer[x * step] || 0;
-    const y = (1 - (sample + 1) / 2) * h;
-    x === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
-  }
-  ctx2d.stroke();
-}
-
-/* ------------------------------------------------------------------ */
-/*  Metric display helpers                                             */
-/* ------------------------------------------------------------------ */
-function setMetric(id, value, decimals = 1) {
-  document.getElementById(id).textContent =
-    (typeof value === 'number' && !isNaN(value)) ? value.toFixed(decimals) : '—';
-}
-
-function setBar(id, percent, color) {
-  const el = document.getElementById(id);
-  el.style.width      = Math.max(0, Math.min(100, percent)) + '%';
-  el.style.background = color;
-}
-
-function volumeColor(db) {
-  if (db > -12) return 'var(--red)';
-  if (db > -30) return 'var(--yellow)';
-  return 'var(--green)';
-}
-
-function jitterColor(jitter) {
-  if (jitter > 2)  return 'var(--red)';
-  if (jitter > 0.8) return 'var(--yellow)';
-  return 'var(--green)';
-}
-
-/* ------------------------------------------------------------------ */
-/*  WASM Engine loading                                                */
-/* ------------------------------------------------------------------ */
-const wasmStatusEl = document.getElementById('wasm-status');
-let   Module = null;
-let   engineInited = false;
-let   metricsPtr   = 0;
-let   audioPtr     = 0; // WASM heap buffer for incoming audio chunks
-
-// Metric struct byte offsets (matches Metrics typedef in coach.c):
-//   0: volume_rms (float), 4: volume_db (float), 8: pitch_hz (float),
-//   12: jitter_ms (float), 16: window_ready (int)
-const OFFSET_RMS    = 0;
-const OFFSET_DB     = 1;
-const OFFSET_PITCH  = 2;
-const OFFSET_JITTER = 3;
-const OFFSET_READY  = 4; // int32 — read via HEAP32
-
-async function loadEngine() {
-  try {
-    log('Loading engine module…');
-    // engine.js is already loaded via <script> tag above.
-    // MODULARIZE=1 sets window.EngineModule as the factory function.
-    if (typeof EngineModule === 'undefined') throw new Error('engine.js script not loaded — check dist/engine.js exists');
-    Module = await EngineModule();
-    log('WebAssembly module instantiated.', 'ok');
-
-    // Wrap the exported C functions
-    Module._engine_init       = Module.cwrap('engine_init',       'number', ['number']);
-    Module._engine_push       = Module.cwrap('engine_push',       'number', ['number','number']);
-    Module._engine_get_metrics= Module.cwrap('engine_get_metrics','number', []);
-    Module._engine_reset      = Module.cwrap('engine_reset',      null,     []);
-
-    const ret = Module._engine_init(44100); // will be re-initialised with real SR
-    if (ret !== 0) throw new Error('engine_init returned ' + ret);
-
-    metricsPtr = Module._engine_get_metrics();
-    audioPtr   = Module._malloc(128 * 4); // 128 float32 samples × 4 bytes
-    log(`engine_init(44100) → OK  |  metrics @ 0x${metricsPtr.toString(16)}`, 'ok');
-    engineInited = true;
-
-    wasmStatusEl.textContent = '✅ Engine Ready';
-    wasmStatusEl.className   = 'status-ok';
-
-    document.getElementById('btn-start').disabled = false;
-    document.getElementById('btn-reset').disabled = false;
-  } catch (e) {
-    log('Failed to load engine: ' + e.message, 'err');
-    wasmStatusEl.textContent = '❌ Engine Load Failed — did you run build.sh?';
-    wasmStatusEl.className   = 'status-err';
-  }
-}
-
-loadEngine();
-
-/* ------------------------------------------------------------------ */
-/*  AudioWorklet (inline as a Blob URL)                                */
-/*                                                                     */
-/*  The worklet runs on a dedicated audio thread. It receives 128-     */
-/*  sample Float32Arrays from the microphone, writes them into the     */
-/*  WASM heap, calls engine_push(), then forwards a copy to the main   */
-/*  thread for waveform rendering.                                      */
-/* ------------------------------------------------------------------ */
-// The worklet is intentionally minimal — it only forwards raw audio
-// samples to the main thread as transferable ArrayBuffers.
-// All WASM engine calls happen on the main thread to avoid the
-// "cannot clone function" postMessage restriction.
-const workletCode = `
-class CoachProcessor extends AudioWorkletProcessor {
-  process(inputs) {
-    const input = inputs[0];
-    if (!input || !input[0]) return true;
-    const samples = input[0]; // Float32Array, 128 samples
-    // Transfer ownership (zero-copy) to main thread
-    const copy = samples.slice(0);
-    this.port.postMessage({ type: 'audio', buf: copy }, [copy.buffer]);
-    return true;
-  }
-}
-registerProcessor('coach-processor', CoachProcessor);
-`;
-
-/* ------------------------------------------------------------------ */
-/*  Mic capture + Worklet setup                                        */
-/* ------------------------------------------------------------------ */
-let audioCtx   = null;
-let workletNode = null;
-let streamSource= null;
-let mediaStream = null;
-
-async function startMic() {
-  if (!engineInited) { log('Engine not ready yet.', 'warn'); return; }
-
-  try {
-    log('Requesting microphone access…');
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    log('Microphone granted.', 'ok');
-
-    audioCtx = new AudioContext();
-    const sr = audioCtx.sampleRate;
-    log(`AudioContext sampleRate: ${sr} Hz`);
-
-    // Re-init engine with the real sample rate
-    Module._engine_reset();
-    Module._engine_init(sr);
-    metricsPtr = Module._engine_get_metrics();
-
-    // Create worklet from inline blob
-    const blob     = new Blob([workletCode], { type: 'application/javascript' });
-    const blobURL  = URL.createObjectURL(blob);
-    await audioCtx.audioWorklet.addModule(blobURL);
-
-    workletNode = new AudioWorkletNode(audioCtx, 'coach-processor');
-
-    // Send the WASM module instance to the worklet thread
-    // No init message needed — worklet has no WASM dependency.
-    log('AudioWorklet active. Engine running on main thread.', 'ok');
-
-    workletNode.port.onmessage = (e) => {
-      if (e.data.type !== 'audio') return;
-      const samples = new Float32Array(e.data.buf);
-
-      // Draw waveform
-      drawWaveform(samples);
-
-      // Write samples into the WASM heap buffer
-      const off = audioPtr >> 2; // byte offset → float32 index
-      Module.HEAPF32.set(samples, off);
-
-      // Push to engine — returns 1 when the 1-second window is complete
-      const windowDone = Module._engine_push(audioPtr, samples.length);
-
-      if (windowDone) {
-        const fOff = metricsPtr >> 2;
-        const metrics = {
-          volume_rms  : Module.HEAPF32[fOff + 0],
-          volume_db   : Module.HEAPF32[fOff + 1],
-          pitch_hz    : Module.HEAPF32[fOff + 2],
-          jitter_ms   : Module.HEAPF32[fOff + 3],
-          window_ready: Module.HEAP32 [fOff + 4],
-        };
-        updateMetrics(metrics);
-      }
-    };
-
-    streamSource = audioCtx.createMediaStreamSource(mediaStream);
-    streamSource.connect(workletNode);
-    // Do NOT connect workletNode to destination (no speaker feedback)
-
-    document.getElementById('btn-start').disabled = true;
-    document.getElementById('btn-stop').disabled  = false;
-    log('Listening… metrics update every 1 second.', 'ok');
-
-  } catch (err) {
-    log('Error: ' + err.message, 'err');
-  }
-}
-
-function stopMic() {
-  if (streamSource) { streamSource.disconnect(); streamSource = null; }
-  if (workletNode)  { workletNode.disconnect();  workletNode  = null; }
-  if (audioCtx)     { audioCtx.close();          audioCtx     = null; }
-  if (mediaStream)  { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-
-  document.getElementById('btn-start').disabled = false;
-  document.getElementById('btn-stop').disabled  = true;
-  log('Microphone stopped.', 'warn');
-}
-
-function resetEngine() {
-  if (engineInited) {
-    Module._engine_reset();
-    setMetric('val-volume-db', NaN);
-    setMetric('val-pitch',     NaN);
-    setMetric('val-jitter',    NaN);
-    setBar('bar-volume', 0, 'var(--green)');
-    setBar('bar-pitch',  0, 'var(--accent)');
-    setBar('bar-jitter', 0, 'var(--yellow)');
-    log('Engine state reset.', 'warn');
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Render metrics to UI                                               */
-/* ------------------------------------------------------------------ */
-function updateMetrics(m) {
-  // Volume
-  const db = m.volume_db;
-  setMetric('val-volume-db', db);
-  // Map dBFS [-60, 0] → [0, 100]%
-  const volPct = Math.max(0, (db + 60) / 60 * 100);
-  setBar('bar-volume', volPct, volumeColor(db));
-
-  // Pitch
-  const pitch = m.pitch_hz;
-  setMetric('val-pitch', pitch, 1);
-  // Map [80, 500] Hz → [0, 100]%
-  const pitchPct = Math.max(0, (pitch - 80) / (500 - 80) * 100);
-  setBar('bar-pitch', pitchPct, 'var(--accent)');
-
-  // Jitter
-  const jitter = m.jitter_ms;
-  setMetric('val-jitter', jitter, 3);
-  // Map [0, 5ms] → [0, 100]%
-  const jitterPct = Math.min(100, jitter / 5 * 100);
-  setBar('bar-jitter', jitterPct, jitterColor(jitter));
-
-  const voiced = pitch > 0 ? `pitched @ ${pitch.toFixed(1)} Hz` : 'unvoiced / silence';
-  log(`vol ${db.toFixed(1)} dBFS | ${voiced} | jitter ${jitter.toFixed(3)} ms`);
-
-  // Push to history graph and update live legend
-  pushMetricsHistory({ volume_db: db, pitch_hz: pitch, jitter_ms: jitter });
-  document.getElementById('legend-vol').textContent    = `Volume: ${db.toFixed(1)} dBFS`;
-  document.getElementById('legend-pitch').textContent  = pitch > 0 ? `Pitch: ${pitch.toFixed(1)} Hz` : 'Pitch: unvoiced';
-  document.getElementById('legend-jitter').textContent = `Jitter: ${jitter.toFixed(3)} ms`;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Real-Time Metrics History Graph                                    */
-/* ------------------------------------------------------------------ */
-const MAX_HISTORY   = 60;      // data points (1 per second)
-const metricsHistory = [];
-const gCanvas = document.getElementById('metrics-graph');
-const gCtx    = gCanvas.getContext('2d');
-
-function resizeGraph() {
-  gCanvas.width  = gCanvas.offsetWidth  * (window.devicePixelRatio || 1);
-  gCanvas.height = gCanvas.offsetHeight * (window.devicePixelRatio || 1);
-  drawGraph();
-}
-window.addEventListener('resize', resizeGraph);
-resizeGraph();
-
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1,3), 16);
-  const g = parseInt(hex.slice(3,5), 16);
-  const b = parseInt(hex.slice(5,7), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function pushMetricsHistory(d) {
-  metricsHistory.push(d);
-  if (metricsHistory.length > MAX_HISTORY) metricsHistory.shift();
-  drawGraph();
-}
-
-function drawGraph() {
-  const dpr  = window.devicePixelRatio || 1;
-  const W    = gCanvas.width;
-  const H    = gCanvas.height;
-  const padL = 48 * dpr, padR = 16 * dpr;
-  const padT = 16 * dpr, padB = 32 * dpr;
-  const pW   = W - padL - padR;
-  const pH   = H - padT - padB;
-
-  gCtx.clearRect(0, 0, W, H);
-
-  /* ---- background ---- */
-  gCtx.fillStyle = 'rgba(13,15,26,0.7)';
-  gCtx.beginPath();
-  const r = 10 * dpr;
-  gCtx.roundRect(0, 0, W, H, r);
-  gCtx.fill();
-
-  /* ---- horizontal grid + Y labels ---- */
-  const gridSteps = 4;
-  for (let i = 0; i <= gridSteps; i++) {
-    const y   = padT + pH - (i / gridSteps) * pH;
-    const pct = (i / gridSteps * 100).toFixed(0) + '%';
-
-    gCtx.beginPath();
-    gCtx.strokeStyle = i === 0 ? 'rgba(42,47,74,0.9)' : 'rgba(42,47,74,0.45)';
-    gCtx.lineWidth   = (i === 0 ? 1.5 : 1) * dpr;
-    gCtx.setLineDash(i === 0 ? [] : [4 * dpr, 4 * dpr]);
-    gCtx.moveTo(padL, y);
-    gCtx.lineTo(padL + pW, y);
-    gCtx.stroke();
-    gCtx.setLineDash([]);
-
-    gCtx.fillStyle  = '#64748b';
-    gCtx.font       = `${10 * dpr}px JetBrains Mono, monospace`;
-    gCtx.textAlign  = 'right';
-    gCtx.textBaseline = 'middle';
-    gCtx.fillText(pct, padL - 7 * dpr, y);
+  function setFeedback(msg, severity) {
+    const now = Date.now();
+    // 2.5s cooldown unless it's a critical red override directly after a green/yellow
+    if (now - currentFeedbackTime < 2500 && severity !== 'red') return;
+    
+    feedbackBoard.textContent = msg;
+    feedbackBoard.className = `c-${severity}`;
+    currentFeedbackTime = now;
   }
 
-  /* ---- X axis labels (time) ---- */
-  const xTicks = 6;
-  gCtx.font      = `${9 * dpr}px Inter, sans-serif`;
-  gCtx.fillStyle = '#64748b';
-  gCtx.textBaseline = 'top';
-  for (let i = 0; i <= xTicks; i++) {
-    const x      = padL + (i / xTicks) * pW;
-    const secAgo = Math.round((xTicks - i) * (MAX_HISTORY / xTicks));
-    gCtx.textAlign = i === 0 ? 'left' : i === xTicks ? 'right' : 'center';
-    gCtx.fillText(secAgo === 0 ? 'now' : `−${secAgo}s`, x, padT + pH + 6 * dpr);
-
-    if (i > 0 && i < xTicks) {
-      gCtx.beginPath();
-      gCtx.strokeStyle = 'rgba(42,47,74,0.3)';
-      gCtx.lineWidth   = 0.5 * dpr;
-      gCtx.setLineDash([3 * dpr, 5 * dpr]);
-      gCtx.moveTo(x, padT);
-      gCtx.lineTo(x, padT + pH);
-      gCtx.stroke();
-      gCtx.setLineDash([]);
-    }
+  async function loadEssentiaWorklet(audioCtx) {
+    // Load directly via ES module support in AudioWorklet
+    await audioCtx.audioWorklet.addModule('./essentia_worklet.js');
   }
 
-  /* ---- empty state ---- */
-  if (metricsHistory.length < 2) {
-    gCtx.fillStyle    = '#334155';
-    gCtx.font         = `${13 * dpr}px Inter, sans-serif`;
-    gCtx.textAlign    = 'center';
-    gCtx.textBaseline = 'middle';
-    gCtx.fillText('Start the microphone to see live metrics history', W / 2, H / 2);
-    return;
-  }
+  btnStart.addEventListener('click', async () => {
+    try {
+      feedbackBoard.textContent = "Loading Engine...";
+      feedbackBoard.className = "c-yellow";
+      
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioCtx = new AudioContext();
+      
+      await loadEssentiaWorklet(audioCtx);
+      workletNode = new AudioWorkletNode(audioCtx, 'coach-processor');
 
-  /* ---- draw one metric line ---- */
-  function drawLine(normFn, hexColor) {
-    const n   = metricsHistory.length;
-    const pts = metricsHistory.map((d, i) => {
-      const norm = normFn(d);
-      if (norm === null) return null;
-      return {
-        x: padL + (i / (MAX_HISTORY - 1)) * pW,
-        y: padT + pH - norm * pH,
+      // Setup 5-sec calibration phase
+      setFeedback("Speak naturally so we can calibrate your voice...", "yellow");
+      workletNode.port.postMessage({ type: 'START_CALIBRATION' });
+      
+      setTimeout(() => {
+        workletNode.port.postMessage({ type: 'FINISH_CALIBRATION' });
+      }, 5000);
+
+      workletNode.port.onmessage = (e) => {
+        const data = e.data;
+        if (data.type === 'CALIBRATION_DONE') {
+          // If stdDev is huge absolutely (not relatively), warn the user, but we will pass them anyway.
+          if (data.stdDevRms > 0.1) {
+            setFeedback("Warning: Noisy environment detected during calibration.", "yellow");
+          } else {
+            setFeedback("Calibration Complete. Ready to coach!", "green");
+          }
+          sentenceDropCount = 0;
+        } else if (data.type === 'METRICS') {
+            processMetrics(data);
+        }
       };
-    });
 
-    /* gradient fill */
-    gCtx.beginPath();
-    let started = false;
-    let lastPt  = null;
-    for (let i = 0; i < pts.length; i++) {
-      if (!pts[i]) { started = false; lastPt = null; continue; }
-      if (!started) {
-        gCtx.moveTo(pts[i].x, padT + pH);
-        gCtx.lineTo(pts[i].x, pts[i].y);
-        started = true;
-      } else if (lastPt) {
-        const mx = (lastPt.x + pts[i].x) / 2;
-        gCtx.bezierCurveTo(mx, lastPt.y, mx, pts[i].y, pts[i].x, pts[i].y);
-      }
-      lastPt = pts[i];
-    }
-    if (lastPt) {
-      gCtx.lineTo(lastPt.x, padT + pH);
-      gCtx.closePath();
-      const grad = gCtx.createLinearGradient(0, padT, 0, padT + pH);
-      grad.addColorStop(0, hexToRgba(hexColor, 0.22));
-      grad.addColorStop(1, hexToRgba(hexColor, 0));
-      gCtx.fillStyle = grad;
-      gCtx.fill();
-    }
+      streamSource = audioCtx.createMediaStreamSource(mediaStream);
+      streamSource.connect(workletNode);
 
-    /* stroke with glow */
-    gCtx.beginPath();
-    started = false; lastPt = null;
-    for (let i = 0; i < pts.length; i++) {
-      if (!pts[i]) { started = false; lastPt = null; continue; }
-      if (!started) {
-        gCtx.moveTo(pts[i].x, pts[i].y);
-        started = true;
-      } else if (lastPt) {
-        const mx = (lastPt.x + pts[i].x) / 2;
-        gCtx.bezierCurveTo(mx, lastPt.y, mx, pts[i].y, pts[i].x, pts[i].y);
-      }
-      lastPt = pts[i];
+      btnStart.disabled = true;
+      btnStop.disabled = false;
+      
+    } catch (err) {
+      console.error(err);
+      feedbackBoard.textContent = "Error: " + err.message;
+      feedbackBoard.className = "c-red";
     }
-    gCtx.shadowColor  = hexColor;
-    gCtx.shadowBlur   = 10 * dpr;
-    gCtx.strokeStyle  = hexColor;
-    gCtx.lineWidth    = 2.5 * dpr;
-    gCtx.lineJoin     = 'round';
-    gCtx.stroke();
-    gCtx.shadowBlur   = 0;
-
-    /* dot at the newest point */
-    const last = pts.filter(Boolean).at(-1);
-    if (last) {
-      gCtx.beginPath();
-      gCtx.arc(last.x, last.y, 4 * dpr, 0, Math.PI * 2);
-      gCtx.fillStyle   = hexColor;
-      gCtx.shadowColor = hexColor;
-      gCtx.shadowBlur  = 12 * dpr;
-      gCtx.fill();
-      gCtx.shadowBlur  = 0;
+  });
+  
+  function processMetrics(data) {
+    document.getElementById('val-rms').textContent = data.rms.toFixed(4);
+    document.getElementById('val-vad').textContent = data.isVoiced ? '🔴 Voiced' : '⚫ Silence';
+    document.getElementById('val-f0').textContent  = data.f0 > 0 ? data.f0.toFixed(1) : '—';
+    
+    // Accumulate CV
+    if (data.f0 > 0 && data.isVoiced) {
+        shortWindowCV.push(data.f0);
+        if (shortWindowCV.length > 50) shortWindowCV.shift(); // ~5s at 100ms interval
+    }
+    
+    // Evaluate Data
+    if (data.sentenceDrop) {
+        sentenceDropCount++;
+        if (sentenceDropCount >= 3) {
+            setFeedback("Finish your sentences stronger.", "red");
+            sentenceDropCount = 0;
+        }
+    }
+    
+    if (shortWindowCV.length > 10) {
+        let sum = 0;
+        for (let v of shortWindowCV) sum += v;
+        const mean = sum / shortWindowCV.length;
+        
+        let sumSq = 0;
+        for (let v of shortWindowCV) sumSq += (v - mean) ** 2;
+        const variance = sumSq / shortWindowCV.length;
+        const stdDev = Math.sqrt(variance);
+        
+        // Guard against instability at low pitch
+        let cv = null;
+        if (mean >= 80) {
+            cv = stdDev / mean;
+            document.getElementById('val-cv').textContent = cv.toFixed(3);
+        }
+        
+        // Trigger generic coaching feedback based on CV if ready
+        if (cv !== null) {
+            if (cv < 0.10) {
+                setFeedback("You sound monotone. Try varying your pitch.", "red");
+            } else if (cv >= 0.10 && cv <= 0.20) {
+                setFeedback("Good pitch variation.", "green");
+            } else if (cv > 0.20) {
+                setFeedback("Very expressive delivery!", "green");
+            }
+        }
     }
   }
 
-  /* normalisation helpers */
-  const normVol    = d => Math.max(0, Math.min(1, (d.volume_db + 60) / 60));
-  const normPitch  = d => d.pitch_hz > 0
-    ? Math.max(0, Math.min(1, (d.pitch_hz - 80) / (500 - 80)))
-    : null;
-  const normJitter = d => Math.max(0, Math.min(1, d.jitter_ms / 5));
-
-  /* draw fills first (underneath), then strokes on top */
-  drawLine(normVol,    '#4ade80');
-  drawLine(normPitch,  '#6c8efb');
-  drawLine(normJitter, '#facc15');
-
-  /* ---- plot border ---- */
-  gCtx.strokeStyle = 'rgba(42,47,74,0.7)';
-  gCtx.lineWidth   = 1 * dpr;
-  gCtx.strokeRect(padL, padT, pW, pH);
-}
-
-/* ------------------------------------------------------------------ */
-/*  Button wiring                                                      */
-/* ------------------------------------------------------------------ */
-document.getElementById('btn-start').addEventListener('click', startMic);
-document.getElementById('btn-stop' ).addEventListener('click', stopMic);
-document.getElementById('btn-reset').addEventListener('click', resetEngine);
+  btnStop.addEventListener('click', () => {
+    if (streamSource) { streamSource.disconnect(); streamSource = null; }
+    if (workletNode)  { workletNode.disconnect();  workletNode  = null; }
+    if (audioCtx)     { audioCtx.close();          audioCtx     = null; }
+    if (mediaStream)  { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+    
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    
+    feedbackBoard.textContent = "Session Stopped";
+    feedbackBoard.className = "";
+  });
 </script>
 
 </body>
