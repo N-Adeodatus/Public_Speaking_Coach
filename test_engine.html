@@ -355,25 +355,13 @@
       await loadEssentiaWorklet(audioCtx);
       workletNode = new AudioWorkletNode(audioCtx, 'coach-processor');
 
-      // Setup 5-sec calibration phase
-      setFeedback("Speak naturally so we can calibrate your voice...", "yellow");
-      workletNode.port.postMessage({ type: 'START_CALIBRATION' });
-      
-      setTimeout(() => {
-        workletNode.port.postMessage({ type: 'FINISH_CALIBRATION' });
-      }, 5000);
+      // Immediate start
+      setFeedback("Running... Ready to coach!", "green");
+      sentenceDropCount = 0;
 
       workletNode.port.onmessage = (e) => {
         const data = e.data;
-        if (data.type === 'CALIBRATION_DONE') {
-          // If stdDev is huge absolutely (not relatively), warn the user, but we will pass them anyway.
-          if (data.stdDevRms > 0.1) {
-            setFeedback("Warning: Noisy environment detected during calibration.", "yellow");
-          } else {
-            setFeedback("Calibration Complete. Ready to coach!", "green");
-          }
-          sentenceDropCount = 0;
-        } else if (data.type === 'METRICS') {
+        if (data.type === 'METRICS') {
             processMetrics(data);
         }
       };
@@ -412,19 +400,22 @@
     }
     
     if (shortWindowCV.length > 10) {
-        let sum = 0;
-        for (let v of shortWindowCV) sum += v;
-        const mean = sum / shortWindowCV.length;
+        // Compute Median
+        const sorted = [...shortWindowCV].sort((a,b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
         
-        let sumSq = 0;
-        for (let v of shortWindowCV) sumSq += (v - mean) ** 2;
-        const variance = sumSq / shortWindowCV.length;
-        const stdDev = Math.sqrt(variance);
+        // Compute Median Absolute Deviation (MAD)
+        const absoluteDeviations = shortWindowCV.map(v => Math.abs(v - median));
+        absoluteDeviations.sort((a, b) => a - b);
+        const mad = absoluteDeviations[Math.floor(absoluteDeviations.length / 2)];
+        
+        // Convert MAD to standard deviation equivalent (scale factor 1.4826)
+        const robustStdDev = mad * 1.4826;
         
         // Guard against instability at low pitch
         let cv = null;
-        if (mean >= 80) {
-            cv = stdDev / mean;
+        if (median >= 80) {
+            cv = robustStdDev / median;
             document.getElementById('val-cv').textContent = cv.toFixed(3);
         }
         
@@ -444,6 +435,22 @@
     // ── Update graph ──
     pushGraphPoint(data.f0, data.rms, data.isVoiced, latestCV);
     drawGraph();
+
+    // ── Send metrics to terminal backend (Max 2 updates per second) ──
+    const now = Date.now();
+    if (!window.lastLogTime || now - window.lastLogTime > 500) {
+        window.lastLogTime = now;
+        fetch('/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                f0: data.f0,
+                rms: data.rms,
+                isVoiced: data.isVoiced,
+                cv: latestCV
+            })
+        }).catch(() => { /* purely optional, ignore if not running server.js */ });
+    }
   }
 
   btnStop.addEventListener('click', () => {

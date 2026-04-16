@@ -18,10 +18,11 @@ class CoachProcessor extends AudioWorkletProcessor {
     this.prevF0   = 0;
     this.f0Window = []; // rolling window for CV calculation
 
-    // Calibration
-    this.calibrating         = false;
-    this.calibrationRmsBuf   = [];
-    this.silenceThreshold    = 0.005; // sensible default until calibrated
+    // Implicit Calibration & Adaptive Noise Floor
+    this.startupMs        = 0;
+    this.silenceThreshold = 0.008; // conservative default
+    this.shortRmsBuf      = [];
+    this.longRmsHistory   = [];
 
     // VAD state
     this.voicedRunMs  = 0;
@@ -41,19 +42,7 @@ class CoachProcessor extends AudioWorkletProcessor {
 
   // ── Message handler ─────────────────────────────────────────────────────────
   onMessage(e) {
-    if (e.data.type === 'START_CALIBRATION') {
-      this.calibrating       = true;
-      this.calibrationRmsBuf = [];
-    } else if (e.data.type === 'FINISH_CALIBRATION') {
-      this.calibrating = false;
-      if (this.calibrationRmsBuf.length === 0) return;
-
-      const mean = avg(this.calibrationRmsBuf);
-      const sd   = stdDev(this.calibrationRmsBuf, mean);
-      this.silenceThreshold = Math.max(mean * 0.3, 0.003); // never set absurdly low
-
-      this.port.postMessage({ type: 'CALIBRATION_DONE', meanRms: mean, stdDevRms: sd, threshold: this.silenceThreshold });
-    }
+    // Reserved for future control messages (session configuration, etc.)
   }
 
   // ── WebAudio render callback ─────────────────────────────────────────────────
@@ -86,16 +75,47 @@ class CoachProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < this.frameSize; i++) sumSq += buf[i] * buf[i];
     const rms = Math.sqrt(sumSq / this.frameSize);
 
-    // Calibration mode: just collect RMS samples
-    if (this.calibrating) {
-      this.calibrationRmsBuf.push(rms);
-      return;
+    const blockMs = (this.frameSize / 2 / this.sampleRate) * 1000;
+    this.startupMs += blockMs;
+
+    // Adaptive noise floor (Implicit Calibration after 3s)
+    if (this.startupMs > 3000) {
+      this.shortRmsBuf.push(rms);
+      // approx 1-second chunks (since blockMs is ~23ms at 44.1kHz)
+      if (this.shortRmsBuf.length >= 43) {
+        const minRms = Math.min(...this.shortRmsBuf);
+        this.longRmsHistory.push(minRms);
+        if (this.longRmsHistory.length > 10) this.longRmsHistory.shift(); // 10s history
+        
+        const sorted = [...this.longRmsHistory].sort((a,b) => a - b);
+        const p10 = sorted[Math.floor(sorted.length * 0.1)];
+        this.silenceThreshold = p10 + 0.002; // adaptive floor slightly above min
+        this.shortRmsBuf = [];
+      }
     }
 
-    // 2. Pitch (autocorrelation)
-    const rawF0 = this.autocorrPitch(buf);
+    // 2. Zero-Crossing Rate (ZCR)
+    let zcr = 0;
+    for (let i = 1; i < this.frameSize; i++) {
+        if ((buf[i] > 0) !== (buf[i-1] > 0)) zcr++;
+    }
+    const zcrRate = zcr / this.frameSize;
 
-    // 3. Pitch filtering chain
+    // 3. Pitch (autocorrelation) with isolated Low-Pass Filter
+    const pitBuf = new Float32Array(this.frameSize);
+    let lastVal = 0;
+    for (let i = 0; i < this.frameSize; i++) {
+      pitBuf[i] = lastVal * 0.5 + buf[i] * 0.5;
+      lastVal = pitBuf[i];
+    }
+    
+    // Soft-gate: if highly sibilant or scratchy, skip pitch tracking
+    let rawF0 = 0;
+    if (zcrRate < 0.18) {
+      rawF0 = this.autocorrPitch(pitBuf);
+    }
+
+    // 4. Pitch filtering chain
     let f0 = 0;
     if (rawF0 >= 70 && rawF0 <= 400) {
       // Octave-jump rejection
@@ -116,10 +136,9 @@ class CoachProcessor extends AudioWorkletProcessor {
     }
     const smoothF0 = median(this.f0Window);
 
-    // 4. VAD
+    // 5. VAD
     const hasPower = rms > this.silenceThreshold;
     const hasPitch = smoothF0 > 0;
-    const blockMs  = (this.frameSize / 2 / this.sampleRate) * 1000; // hop duration
 
     if (hasPower && hasPitch) {
       this.voicedRunMs  += blockMs;
@@ -213,7 +232,7 @@ class CoachProcessor extends AudioWorkletProcessor {
 
     // Confidence: ratio of peak to zero-lag
     const confidence = ac[0] > 0 ? maxVal / ac[0] : 0;
-    if (confidence < 0.5) return 0;
+    if (confidence < 0.8) return 0;
 
     return this.sampleRate / refined;
   }
