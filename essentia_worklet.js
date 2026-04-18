@@ -132,9 +132,12 @@ class CoachProcessor extends AudioWorkletProcessor {
       this.f0Window.push(f0);
       if (this.f0Window.length > 5) this.f0Window.shift();
     } else {
-      this.f0Window = [];
+      // Don't instantly clear the window; push 0 so it drains out gracefully
+      this.f0Window.push(0);
+      if (this.f0Window.length > 5) this.f0Window.shift();
     }
-    const smoothF0 = median(this.f0Window);
+    const nonZeroF0s = this.f0Window.filter(v => v > 0);
+    const smoothF0 = nonZeroF0s.length > 0 ? median(nonZeroF0s) : 0;
 
     // 5. VAD
     const hasPower = rms > this.silenceThreshold;
@@ -232,7 +235,7 @@ class CoachProcessor extends AudioWorkletProcessor {
 
     // Confidence: ratio of peak to zero-lag
     const confidence = ac[0] > 0 ? maxVal / ac[0] : 0;
-    if (confidence < 0.8) return 0;
+    if (confidence < 0.65) return 0; // lowered slightly to capture breathy or raspy speech
 
     return this.sampleRate / refined;
   }

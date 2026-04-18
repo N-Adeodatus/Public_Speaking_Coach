@@ -129,8 +129,18 @@ export const RealtimeGraph = forwardRef((props, ref) => {
 
   return (
     <div className="graph-panel card" style={{ marginTop: '1.5rem', padding: '1.5rem' }}>
-      <div className="panel-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-        <span className="panel-title" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--muted)' }}>📈 Real-time Metrics Graph</span>
+      <div className="panel-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="panel-title" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--muted)' }}>📈 Real-time Graph</span>
+          <div className="graph-legend" style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem' }}>
+            {SERIES.map(s => (
+              <span key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text)' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: s.color, display: 'inline-block' }}></span>
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </div>
         <button onClick={() => ref.current?.clearData()} className="btn-secondary" style={{ padding: '0.35rem 0.9rem', fontSize: '0.75rem' }}>Clear</button>
       </div>
       <canvas ref={canvasRef} style={{ width: '100%', height: '260px', background: 'var(--surface)', borderRadius: '8px' }} />

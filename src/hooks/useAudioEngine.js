@@ -21,6 +21,7 @@ export const useAudioEngine = (graphRef) => {
 
   // Session-wide running stats for rich AI prompt
   const sessionStatsRef = useRef({ cvSamples: [], rmsSamples: [], voicedFrames: 0, totalFrames: 0 });
+  const lastCvRef = useRef(null);
 
   const processBuffer = useCallback(() => {
     const messages = messageBufferRef.current;
@@ -31,7 +32,7 @@ export const useAudioEngine = (graphRef) => {
 
     for (const msg of messages) {
       if (graphRef.current) {
-        graphRef.current.pushData(msg.f0, msg.rms, msg.isVoiced, msg.cv);
+        graphRef.current.pushData(msg.f0, msg.rms, msg.isVoiced, lastCvRef.current);
       }
 
       // Accumulate session-wide stats
@@ -45,6 +46,17 @@ export const useAudioEngine = (graphRef) => {
         phraseAccumulatorRef.current.f0s.push(msg.f0);
         phraseAccumulatorRef.current.rmsVals.push(msg.rms);
         phraseAccumulatorRef.current.lastVoicedTime = performance.now();
+        
+        // Calculate rolling CV for a more alive graph
+        const f0s = phraseAccumulatorRef.current.f0s;
+        const validF0s = f0s.filter(v => v > 50);
+        if (validF0s.length >= 5) {
+          const sortedF0 = [...validF0s].sort((a,b) => a - b);
+          const medianF0 = sortedF0[Math.floor(sortedF0.length / 2)];
+          const absDev = validF0s.map(v => Math.abs(v - medianF0)).sort((a,b) => a - b);
+          const mad = absDev[Math.floor(absDev.length / 2)];
+          lastCvRef.current = (mad * 1.4826) / medianF0;
+        }
       } else {
         const timeSinceVoiced = performance.now() - (phraseAccumulatorRef.current.lastVoicedTime || performance.now());
         if (timeSinceVoiced > 800) {
@@ -53,6 +65,7 @@ export const useAudioEngine = (graphRef) => {
               // Accumulate per-phrase CV for the session stat
               if (result?.event?.features?.pitchCV != null) {
                 stats.cvSamples.push(result.event.features.pitchCV);
+                lastCvRef.current = result.event.features.pitchCV;
               }
               if (result?.event) sessionHistoryRef.current.push(result.event);
               if (result?.feedback) setFeedback(result.feedback);
@@ -67,7 +80,7 @@ export const useAudioEngine = (graphRef) => {
     if (now - lastStateUpdateRef.current > 200) {
       setMetrics({
         f0: latest.f0,
-        cv: latest.cv, // coming straight from worklet or compute here
+        cv: lastCvRef.current, // stored from phrase processing
         rms: latest.rms,
         isVoiced: latest.isVoiced,
       });
@@ -91,6 +104,7 @@ export const useAudioEngine = (graphRef) => {
       sessionHistoryRef.current = [];
       sessionStartRef.current = Date.now();
       sessionStatsRef.current = { cvSamples: [], rmsSamples: [], voicedFrames: 0, totalFrames: 0 };
+      lastCvRef.current = null;
       eventEngineRef.current.resetSession();
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -226,11 +240,17 @@ Be honest and precise. Avoid vague encouragement. The learner is trying to impro
         summary = response.message.content[0].text;
       }
 
-      // Save compressed session log to Puter FS under /ps-coach-sessions/
+      // Save compressed session log to Puter FS under ps-coach-sessions folder
       try {
+        try {
+          await puter.fs.mkdir('ps-coach-sessions');
+        } catch (dirErr) {
+          // Ignore error if folder already exists
+        }
+        
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const sessionLog = JSON.stringify({ timestamp, durationSec, events }, null, 2);
-        await puter.fs.write(`/ps-coach-sessions/session-${timestamp}.json`, sessionLog);
+        await puter.fs.write(`ps-coach-sessions/session-${timestamp}.json`, sessionLog);
       } catch (fsErr) {
         console.warn('Could not save session to Puter FS:', fsErr?.message ?? fsErr);
       }

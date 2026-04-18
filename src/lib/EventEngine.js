@@ -23,12 +23,15 @@ export class EventEngine {
     if (f0s.length < 5) return null;
 
     // --- Tier 2: Temporal Median & MAD smoothing ---
-    const sortedF0 = [...f0s].sort((a,b) => a - b);
-    const medianF0 = sortedF0[Math.floor(sortedF0.length / 2)];
+    const validF0s = f0s.filter(v => v > 50);
 
     let cv = 0;
-    if (medianF0 > 50) {
-      const absDev = f0s.map(v => Math.abs(v - medianF0)).sort((a,b) => a - b);
+    let medianF0 = 0;
+    if (validF0s.length >= 5) {
+      const sortedF0 = [...validF0s].sort((a,b) => a - b);
+      medianF0 = sortedF0[Math.floor(sortedF0.length / 2)];
+
+      const absDev = validF0s.map(v => Math.abs(v - medianF0)).sort((a,b) => a - b);
       const mad = absDev[Math.floor(absDev.length / 2)];
       cv = (mad * 1.4826) / medianF0;
     }
@@ -38,14 +41,14 @@ export class EventEngine {
     const sessionOffsetSec = parseFloat(((now - this.sessionStartTime) / 1000).toFixed(1));
 
     // Pitch trend: first half vs second half median
-    const mid = Math.floor(f0s.length / 2);
-    const firstHalfF0  = f0s.slice(0, mid).filter(v => v > 50);
-    const secondHalfF0 = f0s.slice(mid).filter(v => v > 50);
+    const mid = Math.floor(validF0s.length / 2);
+    const firstHalfF0  = validF0s.slice(0, mid);
+    const secondHalfF0 = validF0s.slice(mid);
     const avgFirst  = firstHalfF0.length  ? firstHalfF0.reduce((a,b)  => a+b, 0) / firstHalfF0.length  : medianF0;
     const avgSecond = secondHalfF0.length ? secondHalfF0.reduce((a,b) => a+b, 0) / secondHalfF0.length : medianF0;
     const pitchDelta  = avgSecond - avgFirst;
     const pitchTrend  = pitchDelta > 8 ? 'rising' : pitchDelta < -8 ? 'falling' : 'flat';
-    const voicedF0s   = f0s.filter(v => v > 50);
+    const voicedF0s   = validF0s;
     const pitchMin    = voicedF0s.length ? Math.round(Math.min(...voicedF0s)) : 0;
     const pitchMax    = voicedF0s.length ? Math.round(Math.max(...voicedF0s)) : 0;
 
