@@ -192,6 +192,7 @@ class CoachProcessor extends AudioWorkletProcessor {
         isVoiced: this.isVoiced,
         segmentEnded,
         sentenceDrop,
+        segmentDurationMs: segmentEnded ? this.segmentFrames * blockMs : 0,
       });
       this.framesSincePost = 0;
     }
