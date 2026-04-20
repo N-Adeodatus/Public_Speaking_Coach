@@ -5,6 +5,7 @@ export const useAudioEngine = (graphRef) => {
   const [isRunning, setIsRunning] = useState(false);
   const [metrics, setMetrics] = useState({ f0: 0, cv: null, rms: 0, isVoiced: false });
   const [feedback, setFeedback] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const audioCtxRef     = useRef(null);
   const workletNodeRef  = useRef(null);
@@ -389,20 +390,42 @@ Be precise and actionable. Avoid vague encouragement. The learner is trying to i
         if (str !== '[object Object]') summary = str;
       }
 
-      // Save session log to Puter FS
+      // Save session log to Puter FS.
+      // Relative paths (no leading slash) resolve to the user's home directory —
+      // the folder will appear alongside Documents, Desktop, etc. in the Puter file browser.
       try {
-        try { await puter.fs.mkdir('ps-coach-sessions'); } catch (_) {}
+        const SESSION_DIR = 'ps-coach-sessions';
+
+        // Create the directory — only swallow "already exists" errors
+        try {
+          await puter.fs.mkdir(SESSION_DIR);
+        } catch (mkdirErr) {
+          const msg  = (mkdirErr?.message ?? '').toLowerCase();
+          const code = (mkdirErr?.code    ?? '').toLowerCase();
+          const alreadyExists = msg.includes('exist') || code.includes('exist') || code.includes('conflict');
+          if (!alreadyExists) {
+            throw mkdirErr; // surface real errors
+          }
+        }
+
         const timestamp  = new Date().toISOString().replace(/[:.]/g, '-');
         const sessionLog = JSON.stringify({
-          timestamp,
-          durationSec,
-          events,
+          timestamp, durationSec, events,
           pauses: pauseLogRef.current,
           transcript: transcriptChunks,
         }, null, 2);
-        await puter.fs.write(`ps-coach-sessions/session-${timestamp}.json`, sessionLog);
+
+        const filePath = `${SESSION_DIR}/session-${timestamp}.json`;
+        await puter.fs.write(filePath, JSON.stringify({
+          timestamp, durationSec, events,
+          pauses: pauseLogRef.current,
+          transcript: transcriptChunks,
+          aiSummary: summary,           // ← persist the coaching summary
+        }, null, 2));
+        console.log('✅ Session saved to Puter FS:', filePath);
+        setRefreshTrigger(prev => prev + 1); // trigger SessionHistory reload
       } catch (fsErr) {
-        console.warn('Could not save session to Puter FS:', fsErr?.message ?? fsErr);
+        console.warn('Could not save session to Puter FS:', fsErr?.message ?? fsErr, fsErr);
       }
 
       setFeedback({ message: summary, severity: 'green' });
@@ -413,5 +436,5 @@ Be precise and actionable. Avoid vague encouragement. The learner is trying to i
     }
   };
 
-  return { startEngine, stopEngine, isRunning, metrics, feedback };
+  return { startEngine, stopEngine, isRunning, metrics, feedback, refreshTrigger };
 };

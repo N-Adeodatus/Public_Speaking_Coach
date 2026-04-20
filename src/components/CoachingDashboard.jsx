@@ -2,12 +2,13 @@ import React, { useRef } from 'react';
 import { MetricsPanel } from './MetricsPanel';
 import { RealtimeGraph } from './RealtimeGraph';
 import { FeedbackBoard } from './FeedbackBoard';
+import { SessionHistory } from './SessionHistory';
 import { useAudioEngine } from '../hooks/useAudioEngine';
 
 export const CoachingDashboard = () => {
   const graphRef = useRef(null);
   
-  const { startEngine, stopEngine, isRunning, metrics, feedback } = useAudioEngine(graphRef);
+  const { startEngine, stopEngine, isRunning, metrics, feedback, refreshTrigger } = useAudioEngine(graphRef);
 
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -33,6 +34,7 @@ export const CoachingDashboard = () => {
       <FeedbackBoard feedback={feedback} />
       <MetricsPanel {...metrics} />
       <RealtimeGraph ref={graphRef} />
+      <SessionHistory isSignedIn={true} refreshTrigger={refreshTrigger} />
     </div>
   );
 };
