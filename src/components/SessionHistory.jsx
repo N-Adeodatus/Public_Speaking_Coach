@@ -132,68 +132,18 @@ function Chip({ color, label }) {
 }
 
 // ── SessionHistory ───────────────────────────────────────────────────────────
-export const SessionHistory = ({ isSignedIn, refreshTrigger }) => {
-  const [sessions, setSessions]   = useState([]);   // loaded session objects
-  const [totalCount, setTotalCount] = useState(0);  // total files in the folder
-  const [loaded, setLoaded]       = useState(PAGE_SIZE);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState(null);
+export const SessionHistory = ({ activeThread }) => {
+  const [loaded, setLoaded] = useState(PAGE_SIZE);
 
-  const loadSessions = useCallback(async (limit) => {
-    if (!isSignedIn) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // List all session files, sorted newest-first
-      let files = [];
-      try {
-        const dir = await puter.fs.readdir('ps-coach-sessions');
-        files = dir
-          .filter(f => f.name.endsWith('.json'))
-          .sort((a, b) => b.name.localeCompare(a.name)); // lexicographic = chronological (ISO names)
-      } catch (dirErr) {
-        // Folder doesn't exist yet — no sessions
-        setSessions([]);
-        setTotalCount(0);
-        return;
-      }
+  if (!activeThread) return null;
 
-      setTotalCount(files.length);
-      const slice = files.slice(0, limit);
+  const allSessions = activeThread.sessions || [];
+  const totalCount = allSessions.length;
+  // display newest first
+  const reversedSessions = [...allSessions].reverse();
+  const visibleSessions = reversedSessions.slice(0, loaded);
 
-      const parsed = await Promise.all(
-        slice.map(async (f) => {
-          try {
-            const blob = await puter.fs.read(`ps-coach-sessions/${f.name}`);
-            const text = await blob.text();
-            return JSON.parse(text);
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      setSessions(parsed.filter(Boolean));
-    } catch (err) {
-      setError('Could not load session history.');
-      console.warn('SessionHistory load error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [isSignedIn]);
-
-  // Reload when a new session finishes (refreshTrigger bumps)
-  useEffect(() => {
-    loadSessions(loaded);
-  }, [loadSessions, refreshTrigger]);
-
-  const handleLoadMore = () => {
-    const next = loaded + PAGE_SIZE;
-    setLoaded(next);
-    loadSessions(next);
-  };
-
-  if (!isSignedIn) return null;
+  const handleLoadMore = () => setLoaded(prev => prev + PAGE_SIZE);
 
   return (
     <div style={{ marginTop: '2rem' }}>
@@ -215,42 +165,33 @@ export const SessionHistory = ({ isSignedIn, refreshTrigger }) => {
             </span>
           )}
         </div>
-        {loading && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Loading…</span>
-        )}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div style={{ color: 'var(--red)', fontSize: '0.82rem', marginBottom: '1rem' }}>{error}</div>
-      )}
-
       {/* Empty state */}
-      {!loading && sessions.length === 0 && !error && (
+      {visibleSessions.length === 0 && (
         <div style={{
           padding: '2rem', textAlign: 'center', borderRadius: '12px',
           border: '1px dashed var(--border)', color: 'var(--muted)', fontSize: '0.85rem',
         }}>
-          No sessions recorded yet. Complete your first session to see it here.
+          No sessions in this thread yet. Start practicing!
         </div>
       )}
 
       {/* Session cards — newest first = index 1 is most recent */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {sessions.map((s, i) => (
+        {visibleSessions.map((s, i) => (
           <SessionCard key={s.timestamp ?? i} session={s} index={totalCount - i} />
         ))}
       </div>
 
       {/* Load more */}
-      {sessions.length > 0 && loaded < totalCount && (
+      {visibleSessions.length > 0 && loaded < totalCount && (
         <button
           onClick={handleLoadMore}
-          disabled={loading}
           className="btn-secondary"
-          style={{ marginTop: '1rem', width: '100%', opacity: loading ? 0.6 : 1 }}
+          style={{ marginTop: '1rem', width: '100%' }}
         >
-          {loading ? 'Loading…' : `Show more (${totalCount - loaded} remaining)`}
+          {`Show more (${totalCount - loaded} remaining)`}
         </button>
       )}
     </div>

@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { EventEngine } from '../lib/EventEngine';
 
-export const useAudioEngine = (graphRef) => {
+export const useAudioEngine = (graphRef, activeThread, appendSession) => {
   const [isRunning, setIsRunning] = useState(false);
   const [metrics, setMetrics] = useState({ f0: 0, cv: null, rms: 0, isVoiced: false });
   const [feedback, setFeedback] = useState(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const audioCtxRef     = useRef(null);
   const workletNodeRef  = useRef(null);
@@ -345,16 +344,54 @@ ${transcriptChunks.map(c => `[~${c.offsetSec}s] ${c.text}`).join(' | ')}
 Do not count exact filler occurrences — STT recognition is imperfect. Instead, assess the overall pattern: does filler usage appear frequent, occasional, or minimal? Cite 1 example sentence if a clear filler is evident. Hedge your wording: use "appears to" or "the transcript suggests".`
         : '(Transcript unavailable — filler and alignment analysis skipped for this session.)';
 
+      // ── Build Metrics Snapshot ─────────────────────────────────────────────
+      const allText = transcriptChunks.map(c => c.text).join(' ').toLowerCase();
+      const fillerCount = (allText.match(/\b(um|uh|like|you know|literally|basically)\b/g) || []).length;
+      
+      const pauseDist = {
+        total: pauses.length,
+        micro: pauses.filter(p => p.category === 'micro').length,
+        short: pauses.filter(p => p.category === 'short').length,
+        long: pauses.filter(p => p.category === 'long').length,
+        veryLong: pauses.filter(p => p.category === 'very_long').length,
+        avgMs: pauses.length > 0 ? Math.round(pauses.reduce((a, b) => a + b.durationMs, 0) / pauses.length) : 0
+      };
+
+      const metricsSnapshot = {
+        pitchCV: avgCV,
+        speakingRatio: voicedPct,
+        pause: pauseDist,
+        'Approximate STT Filler Count (weak signal)': fillerCount
+      };
+
       // ── Certainty note ─────────────────────────────────────────────────────
       const certaintyNote = durationSec < 45
         ? `NOTE: Short sample (${durationSec}s). Treat observations as early signals, not definitive diagnosis.`
         : `Session length (${durationSec}s) is sufficient for moderate confidence in these observations.`;
+
+      // ── Hybrid Memory & Goal Injection ─────────────────────────────────────
+      const threadGoalText = activeThread?.goal 
+        ? `\n━━ THREAD GOAL ━━\nThe user's goal for this practice thread is: "${activeThread.goal}"\n` 
+        : '';
+
+      let memoryPrompt = '';
+      if (activeThread?.sessions?.length > 0) {
+        const last3 = activeThread.sessions.slice(-3);
+        const attemptNodes = last3.map((s, i) => {
+          const m = s.metricsSnapshot;
+          if (!m) return `Attempt -${last3.length - i}: (Legacy session, no metrics available)`;
+          return `Attempt -${last3.length - i}:\n- Speaking Ratio: ${m.speakingRatio}% | Pitch CV: ${m.pitchCV} | Pauses: ${m.pause.total} (${m.pause.long + m.pause.veryLong} long+)\n- Feedback given: "${s.aiSummary?.replace(/\n/g, ' ') ?? 'None'}"`;
+        }).join('\n\n');
+        
+        memoryPrompt = `\n━━ PREVIOUS COACHING CONTEXT ━━\nThe user is practicing progressively. Here is the context from their last ${last3.length} attempts:\n${attemptNodes}\n`;
+      }
 
       // ── Final structured prompt ────────────────────────────────────────────
       const prompt = `You are a professional public speaking coach. Analyze this session data and produce a coaching response.
 
 ${certaintyNote}
 
+${threadGoalText}${memoryPrompt}
 ━━ SECTION 1 of 4 — SESSION OVERVIEW ━━
 Duration: ${durationSec}s | Speaking ratio: ${voicedPct}% | Avg loudness: ${avgRMS} RMS
 
@@ -371,11 +408,27 @@ ${pauseSection}
 ━━ SECTION 4 of 4 — FLUENCY / FILLER WORDS ━━
 ${transcriptSection}
 
-━━ INSTRUCTION ━━
-Write ONE coaching response of 5–6 sentences. Cover all 4 sections proportionally.
-Reference 2–3 SPECIFIC timestamped moments from the data above.
-When relevant, connect signals across sections (e.g., hesitation pauses that coincide with filler usage, or long pauses following monotone segments).
-Be precise and actionable. Avoid vague encouragement. The learner is trying to improve.`;
+━━ EXPERT COACHING CONSTRAINTS ━━
+1. Significance Filtering: Only report metric changes that are perceptually meaningful. Ignore minor fluctuations (e.g., CV changes < 0.02). Limit your analysis to the 1-2 most impactful changes. If a change is below the significance threshold, DO NOT mention it at all.
+   - Fallback: If no significant changes are detected, explicitly state that performance is stable and confirm the baseline.
+2. Trend Awareness: If 3 sessions are available, identify if the trend is increasing, decreasing, or inconsistent. Do not call something a trend unless it is consistent across all 3 sessions.
+3. Cross-Metric Reasoning: Attempt to include at least one cross-metric insight ONLY if a plausible behavioral link exists. If no strong connection exists, explicitly state that signals appear independent.
+4. Epistemic Humility: Treat acoustic metrics (pitch, pauses) as reliable. Treat STT-derived metrics (fillers) as approximate. Do not present filler metrics as precise counts or definitive conclusions; always frame them as approximate patterns using hedged language.
+5. Prioritization: Focus primarily on issues that most impact listener perception (1: Long pauses, 2: Monotone delivery, 3: Frequent fillers). Use this hierarchy as a guide, but override it if another change has a drastically stronger perceptual impact.
+6. Actionability: Your interpretation MUST include one concrete, specific improvement action tied directly to the most important observed issue.
+7. Conflict Resolution: If constraints conflict, prioritize accuracy and honesty over satisfying all rules. It is acceptable to provide fewer insights rather than inventing weak ones.
+
+Keep the advice strictly aligned with the Thread Goal.
+
+You MUST structure your response like this:
+
+━━ METRIC COMPARISON ━━
+- Pitch CV: [prev] → [current] ([change/trend])
+- Pauses: [prev] → [current] ([change/trend])
+- [Only include significant metrics...]
+
+━━ INTERPRETATION ━━
+[Provide 4-5 sentences applying the constraints above]`;
 
       const response = await puter.ai.chat(prompt, { model: 'anthropic/claude-sonnet-4-6' });
 
@@ -390,42 +443,21 @@ Be precise and actionable. Avoid vague encouragement. The learner is trying to i
         if (str !== '[object Object]') summary = str;
       }
 
-      // Save session log to Puter FS.
-      // Relative paths (no leading slash) resolve to the user's home directory —
-      // the folder will appear alongside Documents, Desktop, etc. in the Puter file browser.
+      // Save session log via Threads
       try {
-        const SESSION_DIR = 'ps-coach-sessions';
-
-        // Create the directory — only swallow "already exists" errors
-        try {
-          await puter.fs.mkdir(SESSION_DIR);
-        } catch (mkdirErr) {
-          const msg  = (mkdirErr?.message ?? '').toLowerCase();
-          const code = (mkdirErr?.code    ?? '').toLowerCase();
-          const alreadyExists = msg.includes('exist') || code.includes('exist') || code.includes('conflict');
-          if (!alreadyExists) {
-            throw mkdirErr; // surface real errors
-          }
+        if (appendSession) {
+          await appendSession({
+            timestamp: new Date().toISOString(),
+            durationSec,
+            events,
+            pauses,
+            transcript: transcriptChunks,
+            metricsSnapshot,
+            aiSummary: summary
+          });
         }
-
-        const timestamp  = new Date().toISOString().replace(/[:.]/g, '-');
-        const sessionLog = JSON.stringify({
-          timestamp, durationSec, events,
-          pauses: pauseLogRef.current,
-          transcript: transcriptChunks,
-        }, null, 2);
-
-        const filePath = `${SESSION_DIR}/session-${timestamp}.json`;
-        await puter.fs.write(filePath, JSON.stringify({
-          timestamp, durationSec, events,
-          pauses: pauseLogRef.current,
-          transcript: transcriptChunks,
-          aiSummary: summary,           // ← persist the coaching summary
-        }, null, 2));
-        console.log('✅ Session saved to Puter FS:', filePath);
-        setRefreshTrigger(prev => prev + 1); // trigger SessionHistory reload
-      } catch (fsErr) {
-        console.warn('Could not save session to Puter FS:', fsErr?.message ?? fsErr, fsErr);
+      } catch (saveErr) {
+        console.warn('Could not save session to thread:', saveErr?.message ?? saveErr);
       }
 
       setFeedback({ message: summary, severity: 'green' });
@@ -436,5 +468,5 @@ Be precise and actionable. Avoid vague encouragement. The learner is trying to i
     }
   };
 
-  return { startEngine, stopEngine, isRunning, metrics, feedback, refreshTrigger };
+  return { startEngine, stopEngine, isRunning, metrics, feedback };
 };
