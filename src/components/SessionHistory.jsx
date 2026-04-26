@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar, Clock, ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus, FolderOpen, Mic } from "lucide-react";
 
-const PAGE_SIZE = 3; // sessions shown by default, load more adds another PAGE_SIZE
+const PAGE_SIZE = 3;
 
-// ── helpers ─────────────────────────────────────────────────────────────────
 function formatDate(isoTimestamp) {
   try {
-    // session filenames use dashes: 2026-04-20T19-28-52-503Z → restore colons
     const normalized = isoTimestamp.replace(/T(\d{2})-(\d{2})-(\d{2})-/, 'T$1:$2:$3.');
     return new Intl.DateTimeFormat(undefined, {
       dateStyle: 'medium', timeStyle: 'short',
@@ -20,7 +22,6 @@ function formatDuration(sec) {
   return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 }
 
-// ── SessionCard ──────────────────────────────────────────────────────────────
 function SessionCard({ session, index }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -29,109 +30,100 @@ function SessionCard({ session, index }) {
   const summaryText  = session.aiSummary ?? null;
   const preview      = summaryText ? summaryText.slice(0, 160).trimEnd() + (summaryText.length > 160 ? '…' : '') : null;
 
+  // Progress Intelligence heuristic
+  let progressStatus = "Stable";
+  let ProgressIcon = Minus;
+  let badgeVariant = "secondary";
+  let badgeColor = "text-muted-foreground";
+
+  if (summaryText) {
+    const lower = summaryText.toLowerCase();
+    if (lower.includes("improved") || lower.includes("progress") || lower.includes("better") || lower.includes("reduced pauses")) {
+      progressStatus = "Improved";
+      ProgressIcon = TrendingUp;
+      badgeVariant = "outline";
+      badgeColor = "text-emerald-500 border-emerald-500/30 bg-emerald-500/10";
+    } else if (lower.includes("regressed") || lower.includes("worse") || lower.includes("increased pauses")) {
+      progressStatus = "Regressed";
+      ProgressIcon = TrendingDown;
+      badgeVariant = "outline";
+      badgeColor = "text-destructive border-destructive/30 bg-destructive/10";
+    }
+  }
+
   return (
-    <div
-      className="card"
-      style={{
-        padding: '1.25rem 1.5rem',
-        borderRadius: '12px',
-        border: '1px solid var(--border)',
-        background: 'var(--card)',
-        transition: 'border-color 0.2s',
-        cursor: 'pointer',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-      }}
-      onClick={() => setExpanded(e => !e)}
+    <Card 
+      className={`transition-all duration-200 cursor-pointer hover:border-primary/50 ${expanded ? 'border-primary/50 shadow-md' : 'shadow-sm'}`}
+      onClick={() => setExpanded(!expanded)}
     >
-      {/* Header row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{
-            width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
-            background: 'linear-gradient(135deg, var(--accent), #a78bfa)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.75rem', fontWeight: 700, color: '#fff',
-          }}>
-            {index}
-          </span>
-          <div>
-            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
-              {formatDate(session.timestamp)}
+      <CardContent className="p-5 flex flex-col gap-4">
+        {/* Header row */}
+        <div className="flex justify-between items-start gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 border border-primary/20">
+              #{index}
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.15rem' }}>
-              {formatDuration(session.durationSec)} of active speech
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                {formatDate(session.timestamp)}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                <Clock className="h-3 w-3" />
+                {formatDuration(session.durationSec)} active speech
+              </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {summaryText && (
+              <Badge variant={badgeVariant} className={`gap-1 ${badgeColor}`}>
+                <ProgressIcon className="h-3 w-3" />
+                {progressStatus}
+              </Badge>
+            )}
+            {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
           </div>
         </div>
 
         {/* Stat chips */}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {eventCount > 0 && (
-            <Chip color="var(--accent)" label={`${eventCount} phrases`} />
-          )}
-          {pauseCount > 0 && (
-            <Chip color="var(--yellow)" label={`${pauseCount} pauses`} />
-          )}
-          {!summaryText && (
-            <Chip color="var(--muted)" label="No AI summary" />
-          )}
+        <div className="flex gap-2 flex-wrap">
+          {eventCount > 0 && <Badge variant="secondary">{eventCount} phrases</Badge>}
+          {pauseCount > 0 && <Badge variant="secondary">{pauseCount} pauses</Badge>}
+          {!summaryText && <Badge variant="outline" className="text-muted-foreground">No AI summary</Badge>}
         </div>
 
-        <span style={{ color: 'var(--muted)', fontSize: '0.8rem', flexShrink: 0 }}>
-          {expanded ? '▲' : '▼'}
-        </span>
-      </div>
-
-      {/* Summary preview or full text */}
-      {summaryText && (
-        <div style={{
-          fontSize: '0.82rem',
-          lineHeight: 1.65,
-          color: expanded ? 'var(--text)' : 'var(--muted)',
-          borderTop: '1px solid var(--border)',
-          paddingTop: '0.75rem',
-          whiteSpace: 'pre-wrap',
-        }}>
-          {expanded ? summaryText : preview}
-        </div>
-      )}
-
-      {/* Expanded pause breakdown */}
-      {expanded && session.pauses?.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
-          <div style={{ fontSize: '0.72rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem' }}>
-            Pause breakdown
+        {/* Summary preview or full text */}
+        {summaryText && (
+          <div className="text-sm leading-relaxed text-muted-foreground border-t border-border pt-3 whitespace-pre-wrap">
+            {expanded ? summaryText : preview}
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {['micro','short','long','very_long'].map(cat => {
-              const count = session.pauses.filter(p => p.category === cat).length;
-              if (!count) return null;
-              return <Chip key={cat} color="var(--accent)" label={`${count} ${cat.replace('_',' ')}`} />;
-            })}
+        )}
+
+        {/* Expanded pause breakdown */}
+        {expanded && session.pauses?.length > 0 && (
+          <div className="border-t border-border pt-3 mt-1">
+            <div className="text-xs text-muted-foreground uppercase tracking-widest mb-2 font-semibold">
+              Pause breakdown
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {['micro','short','long','very_long'].map(cat => {
+                const count = session.pauses.filter(p => p.category === cat).length;
+                if (!count) return null;
+                return (
+                  <Badge key={cat} variant="outline" className="bg-primary/5 text-primary border-primary/20">
+                    {count} {cat.replace('_',' ')}
+                  </Badge>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function Chip({ color, label }) {
-  return (
-    <span style={{
-      fontSize: '0.72rem', fontWeight: 600,
-      padding: '0.2rem 0.6rem', borderRadius: '20px',
-      border: `1px solid ${color}`,
-      color, background: `${color}18`,
-      whiteSpace: 'nowrap',
-    }}>
-      {label}
-    </span>
-  );
-}
-
-// ── SessionHistory ───────────────────────────────────────────────────────────
 export const SessionHistory = ({ activeThread }) => {
   const [loaded, setLoaded] = useState(PAGE_SIZE);
 
@@ -139,29 +131,23 @@ export const SessionHistory = ({ activeThread }) => {
 
   const allSessions = activeThread.sessions || [];
   const totalCount = allSessions.length;
-  // display newest first
   const reversedSessions = [...allSessions].reverse();
   const visibleSessions = reversedSessions.slice(0, loaded);
 
   const handleLoadMore = () => setLoaded(prev => prev + PAGE_SIZE);
 
   return (
-    <div style={{ marginTop: '2rem' }}>
+    <div className="mt-8">
       {/* Section header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: '1rem',
-      }}>
-        <div>
-          <span style={{
-            fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '1.5px',
-            color: 'var(--muted)',
-          }}>
-            📂 Session History
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <FolderOpen className="h-4 w-4" />
+          <span className="text-xs uppercase tracking-widest font-semibold">
+            Session History
           </span>
           {totalCount > 0 && (
-            <span style={{ marginLeft: '0.75rem', fontSize: '0.72rem', color: 'var(--muted)' }}>
-              ({totalCount} total)
+            <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+              {totalCount} total
             </span>
           )}
         </div>
@@ -169,16 +155,19 @@ export const SessionHistory = ({ activeThread }) => {
 
       {/* Empty state */}
       {visibleSessions.length === 0 && (
-        <div style={{
-          padding: '2rem', textAlign: 'center', borderRadius: '12px',
-          border: '1px dashed var(--border)', color: 'var(--muted)', fontSize: '0.85rem',
-        }}>
-          No sessions in this thread yet. Start practicing!
+        <div className="p-12 text-center rounded-xl border border-dashed border-border flex flex-col items-center justify-center gap-3 bg-card/50">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+            <Mic className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">No sessions yet</h3>
+            <p className="text-sm text-muted-foreground mt-1">Step up to the mic to record your first practice session.</p>
+          </div>
         </div>
       )}
 
-      {/* Session cards — newest first = index 1 is most recent */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      {/* Session cards */}
+      <div className="flex flex-col gap-3">
         {visibleSessions.map((s, i) => (
           <SessionCard key={s.timestamp ?? i} session={s} index={totalCount - i} />
         ))}
@@ -186,13 +175,13 @@ export const SessionHistory = ({ activeThread }) => {
 
       {/* Load more */}
       {visibleSessions.length > 0 && loaded < totalCount && (
-        <button
+        <Button
           onClick={handleLoadMore}
-          className="btn-secondary"
-          style={{ marginTop: '1rem', width: '100%' }}
+          variant="outline"
+          className="w-full mt-4"
         >
-          {`Show more (${totalCount - loaded} remaining)`}
-        </button>
+          Show more ({totalCount - loaded} remaining)
+        </Button>
       )}
     </div>
   );

@@ -1,38 +1,47 @@
 import React from 'react';
-import './FeedbackBoard.css';
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 
 export const FeedbackBoard = ({ feedback }) => {
-  const { message, severity } = feedback || { message: 'Press Start to Begin', severity: 'neutral' };
+  const { message, severity } = feedback || { message: 'Ready to listen.', severity: 'neutral' };
   
-  let colorClass = '';
-  if (severity === 'green') colorClass = 'c-green';
-  if (severity === 'yellow') colorClass = 'c-yellow';
-  if (severity === 'red') colorClass = 'c-red';
+  const isAnalyzing = message.includes('Analyzing session');
 
-  // Adaptive font: shrink for long AI summaries so they don't overflow
-  const fontSize = message.length > 120 ? '0.95rem'
-    : message.length > 60 ? '1.3rem'
-    : '1.8rem';
+  let colorClass = 'text-foreground';
+  let borderClass = 'border-border';
+  let bgClass = 'bg-card';
+
+  if (severity === 'green') {
+    colorClass = 'text-emerald-500';
+    borderClass = 'border-emerald-500/20';
+    bgClass = 'bg-emerald-500/5';
+  }
+  if (severity === 'yellow') {
+    colorClass = 'text-yellow-500';
+    borderClass = 'border-yellow-500/20';
+    bgClass = 'bg-yellow-500/5';
+  }
+  if (severity === 'red') {
+    colorClass = 'text-destructive';
+    borderClass = 'border-destructive/20';
+    bgClass = 'bg-destructive/5';
+  }
+
+  // Adaptive text sizing based on length
+  const textSizeClass = message.length > 120 ? 'text-base sm:text-lg font-normal'
+    : message.length > 60 ? 'text-lg sm:text-xl font-medium'
+    : 'text-2xl sm:text-3xl font-semibold tracking-tight';
 
   return (
-    <div className="status-panel" style={{ width: '100%', marginBottom: '2rem', textAlign: 'center' }}>
-      <div id="feedback-board" className={colorClass} style={{
-        background: 'var(--card)',
-        border: '1px solid var(--border)',
-        borderRadius: '16px',
-        padding: '2rem 1.5rem',
-        fontSize,
-        fontWeight: message.length > 60 ? 400 : 600,
-        lineHeight: 1.6,
-        minHeight: '150px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-        transition: 'font-size 0.3s ease, color 0.3s ease'
-      }}>
-        {message}
-      </div>
-    </div>
+    <Card className={`w-full transition-all duration-500 ${borderClass} ${bgClass} shadow-sm overflow-hidden`}>
+      <CardContent className="p-8 sm:p-12 flex flex-col items-center justify-center min-h-[160px] text-center gap-4">
+        {isAnalyzing && (
+          <Loader2 className="h-8 w-8 text-yellow-500 animate-spin" />
+        )}
+        <p className={`leading-relaxed transition-all duration-300 ${colorClass} ${textSizeClass} ${isAnalyzing ? 'animate-pulse' : ''}`}>
+          {isAnalyzing ? "Analyzing speech patterns and preparing your coaching summary..." : message}
+        </p>
+      </CardContent>
+    </Card>
   );
 };

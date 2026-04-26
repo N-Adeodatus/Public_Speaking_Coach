@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { CoachingDashboard } from './components/CoachingDashboard'
 import { useThreads } from './hooks/useThreads'
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { AppSidebar } from "@/components/AppSidebar"
+import { Button } from "@/components/ui/button"
 import './index.css'
 
 function App() {
@@ -38,75 +41,54 @@ function App() {
   };
 
   return (
-    <div className="app-layout" style={{ 
-      display: 'flex', width: '100%', maxWidth: '1200px', margin: '0 auto', gap: '2rem',
-      alignItems: 'flex-start'
-    }}>
+    <SidebarProvider>
       {isAuthenticated && (
-        <aside style={{ 
-          width: '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem',
-          background: 'var(--card)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--border)',
-          minHeight: '80vh'
-        }}>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>Threads</h2>
-          <button onClick={createThread} className="btn-primary" style={{ width: '100%', padding: '0.75rem' }}>
-            + New Thread
-          </button>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem', overflowY: 'auto' }}>
-            {threadsLoading ? (
-              <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Loading threads...</div>
-            ) : threads.length === 0 ? (
-              <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>No practice threads yet.</div>
-            ) : (
-              threads.map(t => (
-                <div 
-                  key={t.id}
-                  onClick={() => setActiveThreadId(t.id)}
-                  style={{
-                    padding: '0.75rem 1rem', borderRadius: '8px', cursor: 'pointer',
-                    background: activeThreadId === t.id ? 'var(--surface)' : 'transparent',
-                    border: `1px solid ${activeThreadId === t.id ? 'var(--border)' : 'transparent'}`,
-                    color: activeThreadId === t.id ? 'var(--text)' : 'var(--muted)',
-                    transition: 'all 0.2s',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                  }}
-                >
-                  {t.name}
-                </div>
-              ))
-            )}
-          </div>
-        </aside>
+        <AppSidebar 
+          threads={threads} 
+          activeThreadId={activeThreadId} 
+          setActiveThreadId={setActiveThreadId} 
+          createThread={createThread} 
+          threadsLoading={threadsLoading} 
+        />
       )}
 
-      <div className="app-container" style={{ flexGrow: 1 }}>
-        <header>
-          <h1>🎙️ PS Coach</h1>
-          <p>Real-time behavioral feedback engine</p>
-        </header>
-        
-        {!isAuthenticated ? (
-          <div className="login-screen">
-            <p>Please log in to track your progression and save your sessions.</p>
-            <button onClick={handleLogin} className="btn-primary">Login with Puter</button>
-          </div>
-        ) : (
-          <div className="dashboard-container">
-            <div className="user-info">
-              <span>Welcome, {user?.username}</span>
-              <button onClick={handleLogout} className="btn-secondary">Logout</button>
-            </div>
-            
-            <CoachingDashboard 
-              activeThread={activeThread} 
-              appendSession={appendSession} 
-              updateThreadGoal={updateThreadGoal} 
-            />
+      <main className="flex-1 w-full flex flex-col min-h-screen relative p-4 md:p-8 overflow-y-auto">
+        {isAuthenticated && (
+          <div className="absolute top-4 left-4 md:hidden">
+            <SidebarTrigger />
           </div>
         )}
-      </div>
-    </div>
+
+        <div className="w-full max-w-4xl mx-auto flex flex-col gap-8 pt-10 md:pt-0">
+          <header className="text-center mb-8">
+            <h1 className="text-3xl font-bold bg-gradient-to-br from-primary to-purple-400 bg-clip-text text-transparent">
+              🎙️ PS Coach
+            </h1>
+            <p className="text-muted-foreground mt-2">Real-time behavioral feedback engine</p>
+          </header>
+          
+          {!isAuthenticated ? (
+            <div className="text-center bg-card p-12 rounded-2xl border border-border flex flex-col items-center gap-6 max-w-md mx-auto w-full">
+              <p className="text-foreground">Please log in to track your progression and save your sessions.</p>
+              <Button onClick={handleLogin} size="lg" className="w-full">Login with Puter</Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span className="text-sm">Welcome, {user?.username}</span>
+                <Button onClick={handleLogout} variant="outline" size="sm">Logout</Button>
+              </div>
+              
+              <CoachingDashboard 
+                activeThread={activeThread} 
+                appendSession={appendSession} 
+                updateThreadGoal={updateThreadGoal} 
+              />
+            </div>
+          )}
+        </div>
+      </main>
+    </SidebarProvider>
   )
 }
 

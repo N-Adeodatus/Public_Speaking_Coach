@@ -153,6 +153,15 @@ export const useAudioEngine = (graphRef, activeThread, appendSession) => {
     return () => clearInterval(interval);
   }, [isRunning, processBuffer]);
 
+  // Reset engine UI state when thread changes
+  useEffect(() => {
+    setFeedback(null);
+    setMetrics({ f0: 0, cv: null, rms: 0, isVoiced: false });
+    if (graphRef?.current?.clear) {
+      graphRef.current.clear();
+    }
+  }, [activeThread?.id, graphRef]);
+
   // ── startEngine ──────────────────────────────────────────────────────────────
   const startEngine = async () => {
     try {
@@ -227,6 +236,16 @@ export const useAudioEngine = (graphRef, activeThread, appendSession) => {
 
   // ── stopEngine ───────────────────────────────────────────────────────────────
   const stopEngine = async () => {
+    // Flush pending phrase
+    if (phraseAccumulatorRef.current.f0s.length > 10) {
+      const result = eventEngineRef.current.processPhrase(phraseAccumulatorRef.current);
+      if (result?.event?.features?.pitchCV != null) {
+        sessionStatsRef.current.cvSamples.push(result.event.features.pitchCV);
+      }
+      if (result?.event) sessionHistoryRef.current.push(result.event);
+    }
+    phraseAccumulatorRef.current = { f0s: [], rmsVals: [], lastVoicedTime: 0 };
+
     // Stop audio
     if (streamRef.current)    streamRef.current.getTracks().forEach(t => t.stop());
     if (workletNodeRef.current) workletNodeRef.current.disconnect();
