@@ -22,6 +22,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [forceLanding, setForceLanding] = useState(false);
 
   const {
     threads, activeThreadId, setActiveThreadId, activeThread,
@@ -40,6 +41,7 @@ function App() {
       await puter.auth.signIn();
       setIsAuthenticated(true);
       setIsDemoMode(false);
+      setForceLanding(false);
       const u = await puter.auth.getUser();
       setUser(u);
     } catch (e) {
@@ -51,16 +53,29 @@ function App() {
     puter.auth.signOut();
     setIsAuthenticated(false);
     setIsDemoMode(false);
+    setForceLanding(false);
     setUser(null);
   };
 
   const handleTryDemo = () => {
     setIsDemoMode(true);
+    setForceLanding(false);
   };
 
-  // Show Landing Page when not authenticated and not in demo mode
-  if (!isAuthenticated && !isDemoMode) {
-    return <LandingPage onLogin={handleLogin} onTryDemo={handleTryDemo} />;
+  const handleLogoClick = () => {
+    setIsDemoMode(false);
+    setForceLanding(true);
+  };
+
+  // Show Landing Page when not authenticated, not in demo mode, or logo was clicked
+  if ((!isAuthenticated && !isDemoMode) || forceLanding) {
+    return (
+      <LandingPage
+        onLogin={handleLogin}
+        onTryDemo={handleTryDemo}
+        onContinue={isAuthenticated ? () => setForceLanding(false) : null}
+      />
+    );
   }
 
   // Determine the active thread (real or demo)
@@ -78,6 +93,7 @@ function App() {
           setActiveThreadId={setActiveThreadId}
           createThread={createThread}
           threadsLoading={threadsLoading}
+          onLogoClick={handleLogoClick}
         />
       )}
 
@@ -90,13 +106,17 @@ function App() {
 
         <div className="w-full max-w-4xl mx-auto flex flex-col gap-8 pt-10 md:pt-0">
           <header className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-br from-primary to-purple-400 bg-clip-text text-transparent flex items-center gap-2">
+            <button
+              onClick={handleLogoClick}
+              className="text-left group"
+              title="Back to home"
+            >
+              <h1 className="text-2xl font-bold bg-gradient-to-br from-primary to-purple-400 bg-clip-text text-transparent flex items-center gap-2 group-hover:opacity-80 transition-opacity">
                 <Mic className="h-6 w-6 text-primary" />
                 PS Coach
               </h1>
               <p className="text-muted-foreground text-sm mt-0.5">Real-time behavioral feedback engine</p>
-            </div>
+            </button>
             <div className="flex items-center gap-3">
               {isDemoMode && (
                 <Badge variant="outline" className="text-yellow-500 border-yellow-500/30 bg-yellow-500/5 gap-1.5">

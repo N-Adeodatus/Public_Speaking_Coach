@@ -13,14 +13,18 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 
-export function AppSidebar({ threads, activeThreadId, setActiveThreadId, createThread, threadsLoading }) {
+export function AppSidebar({ threads, activeThreadId, setActiveThreadId, createThread, threadsLoading, onLogoClick }) {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2 px-2 py-1.5 font-semibold text-lg text-primary">
+        <button
+          onClick={onLogoClick}
+          className="flex items-center gap-2 px-2 py-1.5 font-semibold text-lg text-primary hover:opacity-75 transition-opacity w-full text-left"
+          title="Back to home"
+        >
           <Mic className="h-5 w-5" />
           <span>PS Coach</span>
-        </div>
+        </button>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

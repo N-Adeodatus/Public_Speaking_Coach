@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  Mic, TrendingUp, ShieldCheck, ChevronRight,
-  Activity, Brain, Users, Sparkles,
+  Mic, TrendingUp, ShieldCheck, ChevronRight, ArrowLeft,
+  Activity, Brain, Sparkles,
   BriefcaseBusiness, Presentation, Phone, Video, GraduationCap
 } from 'lucide-react';
 
@@ -77,7 +77,7 @@ function DashboardPreview() {
 }
 
 // ── Main LandingPage ──────────────────────────────────────────────────────────
-export function LandingPage({ onLogin, onTryDemo }) {
+export function LandingPage({ onLogin, onTryDemo, onContinue }) {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
 
@@ -90,10 +90,20 @@ export function LandingPage({ onLogin, onTryDemo }) {
             </div>
             <span className="font-bold text-foreground text-lg">PS Coach</span>
           </div>
-          <Button onClick={onLogin} variant="outline" size="sm" className="gap-2">
-            Sign In
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {onContinue && (
+              <Button onClick={onContinue} variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to App
+              </Button>
+            )}
+            {!onContinue && (
+              <Button onClick={onLogin} variant="outline" size="sm" className="gap-2">
+                Sign In
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
       </nav>
 
@@ -123,14 +133,23 @@ export function LandingPage({ onLogin, onTryDemo }) {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <Button onClick={onLogin} size="lg" className="gap-2 rounded-full h-12 px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
-                <Mic className="h-5 w-5" />
-                Start Free Coaching
-              </Button>
-              <Button onClick={onTryDemo} size="lg" variant="outline" className="gap-2 rounded-full h-12 px-8">
-                Try Sample Session
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+              {onContinue ? (
+                <Button onClick={onContinue} size="lg" className="gap-2 rounded-full h-12 px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
+                  <ArrowLeft className="h-5 w-5" />
+                  Back to App
+                </Button>
+              ) : (
+                <>
+                  <Button onClick={onLogin} size="lg" className="gap-2 rounded-full h-12 px-8 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
+                    <Mic className="h-5 w-5" />
+                    Start Free Coaching
+                  </Button>
+                  <Button onClick={onTryDemo} size="lg" variant="outline" className="gap-2 rounded-full h-12 px-8">
+                    Try Sample Session
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Trust strip */}
@@ -262,13 +281,22 @@ export function LandingPage({ onLogin, onTryDemo }) {
             Join practitioners who are turning every session into measurable speaking progress.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button onClick={onLogin} size="lg" className="gap-2 rounded-full h-12 px-10 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
-              <Mic className="h-5 w-5" />
-              Start Practicing Free
-            </Button>
-            <Button onClick={onTryDemo} size="lg" variant="outline" className="gap-2 rounded-full h-12 px-8">
-              Try Without Signing In
-            </Button>
+            {onContinue ? (
+              <Button onClick={onContinue} size="lg" className="gap-2 rounded-full h-12 px-10 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
+                <ArrowLeft className="h-5 w-5" />
+                Back to App
+              </Button>
+            ) : (
+              <>
+                <Button onClick={onLogin} size="lg" className="gap-2 rounded-full h-12 px-10 shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all">
+                  <Mic className="h-5 w-5" />
+                  Start Practicing Free
+                </Button>
+                <Button onClick={onTryDemo} size="lg" variant="outline" className="gap-2 rounded-full h-12 px-8">
+                  Try Without Signing In
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </section>
