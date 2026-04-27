@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus, FolderOpen, Mic } from "lucide-react";
+import { SummaryRenderer } from './SummaryRenderer';
 
 const PAGE_SIZE = 3;
 
@@ -28,7 +29,11 @@ function SessionCard({ session, index }) {
   const pauseCount   = session.pauses?.length ?? 0;
   const eventCount   = session.events?.length ?? 0;
   const summaryText  = session.aiSummary ?? null;
-  const preview      = summaryText ? summaryText.slice(0, 160).trimEnd() + (summaryText.length > 160 ? '…' : '') : null;
+  // Strip ━━ section headers for a clean collapsed preview
+  const cleanPreview = summaryText
+    ? summaryText.replace(/━━[^━]+━━/g, '').replace(/[•\-]/g, '').replace(/\s+/g, ' ').trim()
+    : null;
+  const preview      = cleanPreview ? cleanPreview.slice(0, 160).trimEnd() + (cleanPreview.length > 160 ? '…' : '') : null;
 
   // Progress Intelligence heuristic
   let progressStatus = "Stable";
@@ -95,8 +100,11 @@ function SessionCard({ session, index }) {
 
         {/* Summary preview or full text */}
         {summaryText && (
-          <div className="text-sm leading-relaxed text-muted-foreground border-t border-border pt-3 whitespace-pre-wrap">
-            {expanded ? summaryText : preview}
+          <div className="border-t border-border pt-4">
+            {expanded
+              ? <SummaryRenderer text={summaryText} />
+              : <p className="text-sm leading-relaxed text-muted-foreground">{preview}</p>
+            }
           </div>
         )}
 
