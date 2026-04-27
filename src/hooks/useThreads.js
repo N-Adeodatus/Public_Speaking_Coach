@@ -135,6 +135,39 @@ export const useThreads = (isSignedIn) => {
     }
   };
 
+  // ── Delete Thread ──────────────────────────────────────────────────────────
+  const deleteThread = async (id) => {
+    if (!isSignedIn) return;
+    try {
+      // Remove from index and update state
+      const updatedThreads = threads.filter(t => t.id !== id);
+      await puter.fs.write(INDEX_FILE, JSON.stringify(updatedThreads, null, 2));
+      setThreads(updatedThreads);
+
+      // Delete the thread file from Puter (best-effort)
+      try {
+        await puter.fs.delete(`${THREADS_DIR}/thread_${id}.json`);
+      } catch (delErr) {
+        console.warn('Could not delete thread file (may already be missing):', delErr);
+      }
+
+      // If the deleted thread was active, switch focus
+      if (activeThreadId === id) {
+        setActiveThread(null);
+        if (updatedThreads.length > 0) {
+          // Switch to the most recent remaining thread
+          setActiveThreadId(updatedThreads[0].id);
+        } else {
+          // No threads left — auto-create a fresh one
+          setActiveThreadId(null);
+          await createThread();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete thread:', err);
+    }
+  };
+
   // ── Append Session (called by useAudioEngine) ──────────────────────────────
   const appendSession = async (sessionData) => {
     if (!activeThreadId || !activeThread || !isSignedIn) return null;
@@ -172,6 +205,7 @@ export const useThreads = (isSignedIn) => {
     activeThread,
     loading,
     createThread,
+    deleteThread,
     updateThreadGoal,
     appendSession
   };

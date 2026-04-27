@@ -26,7 +26,7 @@ function App() {
 
   const {
     threads, activeThreadId, setActiveThreadId, activeThread,
-    createThread, updateThreadGoal, appendSession, loading: threadsLoading
+    createThread, deleteThread, updateThreadGoal, appendSession, loading: threadsLoading
   } = useThreads(isAuthenticated);
 
   useEffect(() => {
@@ -92,6 +92,7 @@ function App() {
           activeThreadId={activeThreadId}
           setActiveThreadId={setActiveThreadId}
           createThread={createThread}
+          deleteThread={deleteThread}
           threadsLoading={threadsLoading}
           onLogoClick={handleLogoClick}
         />
