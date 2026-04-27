@@ -393,20 +393,31 @@ Do not count exact filler occurrences — STT recognition is imperfect. Instead,
         ? `\n━━ THREAD GOAL ━━\nThe user's goal for this practice thread is: "${activeThread.goal}"\n` 
         : '';
 
+      // Distil previous summaries to avoid token bloat — extract the NEXT DRILL line if
+      // present (new format), otherwise fall back to a 120-char truncation of the summary.
+      const extractMemoryNote = (s) => {
+        const summary = s.aiSummary;
+        if (!summary) return 'None';
+        const drillMatch = summary.match(/━━ NEXT DRILL ━━\s*([^\n━]+)/);
+        if (drillMatch) return `Drill given: "${drillMatch[1].trim()}"`;
+        const clean = summary.replace(/\n/g, ' ').trim();
+        return '"' + (clean.length > 120 ? clean.slice(0, 120) + '…' : clean) + '"';
+      };
+
       let memoryPrompt = '';
       if (activeThread?.sessions?.length > 0) {
         const last3 = activeThread.sessions.slice(-3);
         const attemptNodes = last3.map((s, i) => {
           const m = s.metricsSnapshot;
           if (!m) return `Attempt -${last3.length - i}: (Legacy session, no metrics available)`;
-          return `Attempt -${last3.length - i}:\n- Speaking Ratio: ${m.speakingRatio}% | Pitch CV: ${m.pitchCV} | Pauses: ${m.pause.total} (${m.pause.long + m.pause.veryLong} long+)\n- Feedback given: "${s.aiSummary?.replace(/\n/g, ' ') ?? 'None'}"`;
+          return `Attempt -${last3.length - i}:\n- Speaking Ratio: ${m.speakingRatio}% | Pitch CV: ${m.pitchCV} | Pauses: ${m.pause.total} (${m.pause.long + m.pause.veryLong} long+)\n- Key coaching note: ${extractMemoryNote(s)}`;
         }).join('\n\n');
-        
+
         memoryPrompt = `\n━━ PREVIOUS COACHING CONTEXT ━━\nThe user is practicing progressively. Here is the context from their last ${last3.length} attempts:\n${attemptNodes}\n`;
       }
 
       // ── Final structured prompt ────────────────────────────────────────────
-      const prompt = `You are a professional public speaking coach. Analyze this session data and produce a coaching response.
+      const prompt = `You are a professional public speaking coach. Your job is to produce a response that is analytically honest AND human — not just a data report. Think like a coach who cares about the user's progress, not a system outputting metrics.
 
 ${certaintyNote}
 
@@ -428,26 +439,45 @@ ${pauseSection}
 ${transcriptSection}
 
 ━━ EXPERT COACHING CONSTRAINTS ━━
-1. Significance Filtering: Only report metric changes that are perceptually meaningful. Ignore minor fluctuations (e.g., CV changes < 0.02). Limit your analysis to the 1-2 most impactful changes. If a change is below the significance threshold, DO NOT mention it at all.
+1. Significance Filtering: Only report metric changes that are perceptually meaningful. Ignore minor fluctuations (e.g., CV changes < 0.02). Limit your analysis to the 1-2 most impactful signals. If a change is below the significance threshold, DO NOT mention it at all.
    - Fallback: If no significant changes are detected, explicitly state that performance is stable and confirm the baseline.
 2. Trend Awareness: If 3 sessions are available, identify if the trend is increasing, decreasing, or inconsistent. Do not call something a trend unless it is consistent across all 3 sessions.
-3. Cross-Metric Reasoning: Attempt to include at least one cross-metric insight ONLY if a plausible behavioral link exists. If no strong connection exists, explicitly state that signals appear independent.
-4. Epistemic Humility: Treat acoustic metrics (pitch, pauses) as reliable. Treat STT-derived metrics (fillers) as approximate. Do not present filler metrics as precise counts or definitive conclusions; always frame them as approximate patterns using hedged language.
-5. Prioritization: Focus primarily on issues that most impact listener perception (1: Long pauses, 2: Monotone delivery, 3: Frequent fillers). Use this hierarchy as a guide, but override it if another change has a drastically stronger perceptual impact.
-6. Actionability: Your interpretation MUST include one concrete, specific improvement action tied directly to the most important observed issue.
-7. Conflict Resolution: If constraints conflict, prioritize accuracy and honesty over satisfying all rules. It is acceptable to provide fewer insights rather than inventing weak ones.
+3. Cross-Metric Reasoning: Include one cross-metric insight ONLY if a plausible behavioral link genuinely exists. If no strong connection exists, explicitly state that signals appear independent. Do not manufacture links.
+4. Epistemic Humility — STRICT:
+   - Acoustic metrics (pitch, pauses) are reliable signal. STT-derived metrics (fillers) are approximate.
+   - For ALL behavioral or psychological inferences — why the speaker paused, how they felt, what they were thinking — you MUST use hedged language: "may indicate", "could reflect", "is sometimes consistent with", or "one possibility is". NEVER state a behavioral cause as observed fact.
+   - Forbidden phrasings (too confident): "the speaker was composing thoughts", "difficulty launching", "lost confidence", "the speaker's mind". Replace with softer equivalents.
+   - STT fillers: never present as precise counts. Use "the transcript suggests occasional/frequent/minimal filler usage" — not a number.
+5. Pause Geography: When analyzing pauses, explicitly note WHERE in the session the most notable pauses occur (start / middle / end of recording). This geography is often more diagnostic than total count alone — a "cold start" pattern differs meaningfully from an "ending collapse" pattern.
+6. Plain-Language Translation — REQUIRED: NEVER lead with a raw metric number. Describe every metric in plain English first. Raw numbers are secondary and go in parentheses.
+   - Wrong: "Pitch CV: 0.111 — below average"
+   - Right: "Your voice sounded somewhat flat overall (pitch CV 0.111, below the expressive range)"
+7. Prioritization: Focus on what most impacts listener perception (1: Long pauses, 2: Monotone delivery, 3: Frequent fillers). Override if another signal has a drastically stronger impact.
+8. Next Drill: Give one specific, immediately actionable drill tied to the biggest issue. It must be something the user can do in the next 60 seconds before pressing record again. Not a general tip — a concrete action.
+9. Coach's Tone: You are a coach, not a data analyst. The COACH'S NOTE must be one sentence of genuine, specific encouragement grounded in an actual observation from this session. Never use generic praise ("great job!", "keep it up"). If something improved or shifted in a promising direction, name it in human terms — e.g., "Your hesitation moved from the ending to the opening — that's the easier problem to fix."
+10. Conflict Resolution: If constraints conflict, prioritize accuracy and honesty. Provide fewer insights rather than inventing weak ones.
 
-Keep the advice strictly aligned with the Thread Goal.
+Keep all advice aligned with the Thread Goal if one is set.
 
-You MUST structure your response like this:
+You MUST structure your response EXACTLY like this (all five sections, in this order):
+
+━━ SESSION SNAPSHOT ━━
+• Biggest issue: [one sentence, plain English — no jargon, no raw numbers]
+• Positive signal: [one sentence — a genuine strength or promising shift observed this session]
+• Key metric: [plain-English description of the single most important metric, raw number in parentheses]
 
 ━━ METRIC COMPARISON ━━
-- Pitch CV: [prev] → [current] ([change/trend])
-- Pauses: [prev] → [current] ([change/trend])
-- [Only include significant metrics...]
+- [Metric in plain English]: [prev] → [current] ([change in plain English]) | Pauses: also note geography (start/middle/end)
+- [Only include metrics with perceptually meaningful changes]
 
 ━━ INTERPRETATION ━━
-[Provide 4-5 sentences applying the constraints above]`;
+[3–4 sentences. Apply all constraints. Frame behavioral causes as "may indicate" / "could reflect". Include one cross-metric insight only if genuinely supported by the data.]
+
+━━ NEXT DRILL ━━
+[One sentence. Specific and immediately doable — something to try in the next 60 seconds before the next recording.]
+
+━━ COACH'S NOTE ━━
+[One sentence. Specific encouragement grounded in something actually observed. Frame any progress or shift in plain human terms.]`;
 
       const response = await puter.ai.chat(prompt, { model: 'anthropic/claude-sonnet-4-6' });
 
